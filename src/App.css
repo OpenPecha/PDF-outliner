@@ -1,0 +1,253 @@
+/* Minimal styles */
+.shell {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.p {
+  margin-top: 8px;
+  color: #333;
+  line-height: 1.4;
+}
+
+.subtle {
+  color: #666;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.subtle-small {
+  color: #666;
+  font-size: 12px;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.row-between {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.left {
+  border-right: 1px solid #eee;
+  padding-right: 14px;
+}
+
+.right {
+}
+
+.btn {
+  border: 1px solid #111;
+  background: #111;
+  color: white;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.btn-ghost {
+  border: 1px solid #ddd;
+  background: white;
+  color: #111;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.upload-label {
+  display: inline-block;
+}
+
+.page-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.page-btn {
+  padding: 10px 12px;
+  text-align: left;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  background: white;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.page-btn-active {
+  padding: 10px 12px;
+  text-align: left;
+  border-radius: 10px;
+  border: 1px solid #111;
+  background: #f4f4f4;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.notice {
+  background: #fafafa;
+  border: 1px solid #eee;
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #333;
+}
+
+.workspace-row {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 14px;
+  align-items: start;
+}
+
+.canvas-wrap {
+  position: relative;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  overflow: hidden;
+  background: white;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+}
+
+.canvas-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  /* size set inline to match canvas pixels */
+}
+
+.loading-cover {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.7);
+  font-weight: 700;
+  z-index: 3;
+}
+
+.sidebar {
+  display: grid;
+  gap: 12px;
+}
+
+.card {
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 12px;
+  background: white;
+}
+
+.card-title {
+  font-weight: 800;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.preset-row {
+  display: grid;
+  grid-template-columns: 1fr 34px;
+  gap: 8px;
+  align-items: start;
+}
+
+.preset-btn {
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.preset-btn-active {
+  border: 1px solid #111;
+  background: #f4f4f4;
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.icon-btn {
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 10px;
+  height: 40px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #333;
+}
+
+.input {
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+/* Utility classes for margin adjustments */
+.mt-12 {
+  margin-top: 12px;
+}
+
+.mt-16 {
+  margin-top: 16px;
+}
