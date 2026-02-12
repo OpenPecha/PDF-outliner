@@ -1,200 +1,225 @@
-import React, { useEffect, useMemo, useState } from "react";
-import * as pdfjsLib from "pdfjs-dist";
-import "pdfjs-dist/build/pdf.worker.mjs";
-import { loadWorkspace, saveWorkspace, readQueryPage, setQueryPage, clamp,  fileToDataUrl, dataUrlToUint8Array, extractFirstPages } from "./utils/lib";
-import "./App.css";
-import Uploader from "./components/Uploader";
-import PageNav from "./components/PageNav";
-import PageCropper from "./components/PageCropper";
-import type { WorkspaceState } from "./types";
+import { useState, useCallback } from "react"
+import * as pdfjsLib from "pdfjs-dist"
+import "pdfjs-dist/build/pdf.worker.mjs"
+import { exportCroppedPdf, downloadPdfBytes } from "./utils/lib"
+import { useWorkspace, usePageNavigation } from "./hooks"
+import Uploader from "./components/Uploader"
+import PageNav from "./components/PageNav"
+import PageCropper from "./components/PageCropper"
+import "./App.css"
 
-export const STORAGE_KEY = "pdf-crop-workspace-v1";
-const MAX_RENDER_PAGES = 10;
-
-// pdf.js worker config (modern bundlers usually handle this, but keep it explicit)
-(pdfjsLib as any).GlobalWorkerOptions.workerSrc =
+// pdf.js worker config
+;(pdfjsLib as any).GlobalWorkerOptions.workerSrc =
   (pdfjsLib as any).GlobalWorkerOptions.workerSrc ??
-  new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
+  new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString()
 
+// Register service worker for offline caching
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((registration) => {
+        console.log("Service Worker registered:", registration.scope)
+      })
+      .catch((error) => {
+        console.error("Service Worker registration failed:", error)
+      })
+  })
+}
 
+function App() {
+  const {
+    workspace,
+    availablePages,
+    uploadPdf,
+    resetWorkspace,
+    createPreset,
+    deletePreset,
+    applyPreset,
+    clearAppliedPreset,
+    updatePresetName,
+    getPdfBlobForExport,
+    isLoading: workspaceLoading,
+  } = useWorkspace()
 
+  const { currentPage, navigateToPage } = usePageNavigation(availablePages)
+  const [isLoadingPdf, setIsLoadingPdf] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
 
+  const handleUploadPdf = useCallback(
+    async (file: File) => {
+      setIsLoadingPdf(true)
+      try {
+        await uploadPdf(file)
+        navigateToPage(1)
+      } catch (error) {
+        console.error("Upload failed:", error)
+        alert("Failed to upload PDF. Please try again.")
+      } finally {
+        setIsLoadingPdf(false)
+      }
+    },
+    [uploadPdf, navigateToPage]
+  )
 
-export default function App() {
-  const [ws, setWs] = useState<WorkspaceState>(() => loadWorkspace());
-  const [loadingPdf, setLoadingPdf] = useState(false);
+  const handleReset = useCallback(async () => {
+    await resetWorkspace()
+    navigateToPage(1)
+  }, [resetWorkspace, navigateToPage])
 
-  const [page, setPage] = useState<number>(() => readQueryPage());
-  useEffect(() => {
-    const onPop = () => setPage(readQueryPage());
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  const handleApplyPreset = useCallback((presetId: string) => {
+    applyPreset(currentPage, presetId)
+  }, [applyPreset, currentPage])
 
-  // Keep localStorage in sync
-  useEffect(() => {
-    saveWorkspace(ws);
-  }, [ws]);
+  const handleClearApplied = useCallback(() => {
+    clearAppliedPreset(currentPage)
+  }, [clearAppliedPreset, currentPage])
 
-  const availablePages = useMemo(() => {
-    const n = ws.numPages ?? 0;
-    const cap = Math.min(MAX_RENDER_PAGES, n || MAX_RENDER_PAGES);
-    return Array.from({ length: cap }, (_, i) => i + 1);
-  }, [ws.numPages]);
+  const handleExportCroppedPdf = useCallback(async () => {
+    // Find a preset to use - prefer the one applied to page 1, or any selected preset
+    const page1AppliedPresetId = workspace.pages?.[1]?.appliedPresetId
+    const presetToUse = workspace.presets.find((p) => p.id === page1AppliedPresetId) ?? workspace.presets[0]
 
-  // Ensure page is in range
-  useEffect(() => {
-    if (availablePages.length === 0) return;
-    const max = Math.max(...availablePages);
-    const next = clamp(page, 1, max);
-    if (next !== page) {
-      setPage(next);
-      setQueryPage(next);
+    if (!presetToUse) {
+      alert("Please create a crop preset first by drawing a rectangle on page 1.")
+      return
     }
-  }, [availablePages, page]);
 
-  async function onUploadPdf(file: File) {
-    setLoadingPdf(true);
+    const pdfBlob = await getPdfBlobForExport()
+    if (!pdfBlob) {
+      alert("PDF not available. Please upload a PDF first.")
+      return
+    }
+
+    setIsExporting(true)
     try {
-      const dataUrl = await fileToDataUrl(file);
-      const pdfBytes = dataUrlToUint8Array(dataUrl);
-      
-      // Extract first 5 pages to reduce localStorage size
-      const { pdfDataUrl: extractedDataUrl, totalPages, extractedPages } = await extractFirstPages(pdfBytes, MAX_RENDER_PAGES);
-      
-      // Load the extracted PDF to get page count
-      const pdf = await (pdfjsLib as any).getDocument({ data: dataUrlToUint8Array(extractedDataUrl) }).promise;
+      // Convert blob to data URL for export function
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(pdfBlob)
+      })
 
-      setWs((prev) => ({
-        pdfName: file.name,
-        pdfDataUrl: extractedDataUrl, // Store only the extracted pages
-        numPages: extractedPages, // Use extracted pages count, not total
-        totalPages: totalPages, // Store original total for reference
-        presets: prev.presets ?? [],
-        pages: prev.pages ?? {},
-      }));
-      setQueryPage(1);
-      setPage(1);
+      const { pdfBytes, filename } = await exportCroppedPdf(
+        dataUrl,
+        presetToUse,
+        workspace.pdfName ?? "document.pdf"
+      )
+      downloadPdfBytes(pdfBytes, filename)
+    } catch (error) {
+      console.error("Export failed:", error)
+      alert("Failed to export cropped PDF. Please try again.")
     } finally {
-      setLoadingPdf(false);
+      setIsExporting(false)
     }
-  }
+  }, [workspace, getPdfBlobForExport])
 
-  function resetWorkspace() {
-    localStorage.removeItem(STORAGE_KEY);
-    setWs({ presets: [], pages: {} });
-    setQueryPage(1);
-    setPage(1);
-  }
-
-  if (!ws.pdfDataUrl) {
+  // Early return for empty state
+  if (workspaceLoading) {
     return (
-      <div className="container mx-auto h-screen flex flex-col items-center justify-center"> 
+      <div className="container mx-auto h-screen flex flex-col items-center justify-center">
+        <div className="notice">Loading workspace…</div>
+      </div>
+    )
+  }
+
+  if (!workspace.pdfDataUrl) {
+    return (
+      <div className="container mx-auto h-screen flex flex-col items-center justify-center">
         <h2 className="h2">PDF Crop Workspace (GUI)</h2>
-
-        <Uploader disabled={loadingPdf} onUpload={onUploadPdf} />
-
-        {loadingPdf && <div className="notice">Loading PDF…</div>}
-
+        <Uploader disabled={isLoadingPdf} onUpload={handleUploadPdf} />
+        {isLoadingPdf && <div className="notice">Loading PDF…</div>}
         <div className="notice mt-16">
           Tip: After upload, open <code>/?p=1</code>, <code>/?p=2</code>, <code>/?p=3</code>.
         </div>
       </div>
-    );
+    )
   }
+
+  const appliedPresetId = workspace.pages?.[currentPage]?.appliedPresetId
 
   return (
     <div className="shell">
-      <div className="top-bar">
-        <div>
-          <div className="title">{ws.pdfName ?? "PDF"}</div>
-          <div className="subtle">
-            Pages: {ws.numPages ?? "?"} of {ws.totalPages ?? ws.numPages ?? "?"} total
-            {ws.totalPages && ws.totalPages > (ws.numPages ?? 0) && (
-              <span className="notice" style={{ marginLeft: 8, fontSize: "0.9em" }}>
-                (Only first 5 pages stored to save localStorage space)
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="row">
-          <button className="btn-ghost" onClick={resetWorkspace}>
-            Reset
-          </button>
-          <Uploader disabled={loadingPdf} onUpload={onUploadPdf} label="Replace PDF" />
-        </div>
-      </div>
+      <TopBar
+        pdfName={workspace.pdfName}
+        totalPages={workspace.totalPages}
+        isLoadingPdf={isLoadingPdf}
+        isExporting={isExporting}
+        hasPresets={workspace.presets.length > 0}
+        onReset={handleReset}
+        onUpload={handleUploadPdf}
+        onExport={handleExportCroppedPdf}
+      />
 
       <div className="grid">
-        <div className="left">
+        <aside className="left">
           <h3 className="h3">Rendered Pages</h3>
           <PageNav
             pages={availablePages}
-            current={page}
-            onSelect={(p) => {
-              setPage(p);
-              setQueryPage(p);
-            }}
+            current={currentPage}
+            onSelect={navigateToPage}
           />
-          <div className="notice mt-12">
-            Page view uses query param: <code>/?p={page}</code>
-          </div>
-        </div>
+       
+        </aside>
 
-        <div className="right">
+        <main className="right">
           <PageCropper
-            key={page} // reset internal dragging on page switch
-            pdfDataUrl={ws.pdfDataUrl}
-            pageNumber={page}
-            presets={ws.presets}
-            appliedPresetId={ws.pages?.[page]?.appliedPresetId}
-            onCreatePreset={(preset) =>
-              setWs((prev) => ({
-                ...prev,
-                presets: [...(prev.presets ?? []), preset],
-              }))
-            }
-            onDeletePreset={(presetId) =>
-              setWs((prev) => ({
-                ...prev,
-                presets: (prev.presets ?? []).filter((p) => p.id !== presetId),
-                pages: Object.fromEntries(
-                  Object.entries(prev.pages ?? {}).map(([k, v]) => {
-                    const pn = Number(k);
-                    if (v.appliedPresetId === presetId) {
-                      return [pn, { ...v, appliedPresetId: undefined }];
-                    }
-                    return [pn, v];
-                  })
-                ),
-              }))
-            }
-            onApplyPreset={(presetId) =>
-              setWs((prev) => ({
-                ...prev,
-                pages: {
-                  ...(prev.pages ?? {}),
-                  [page]: { ...(prev.pages?.[page] ?? {}), appliedPresetId: presetId },
-                },
-              }))
-            }
-            onClearApplied={() =>
-              setWs((prev) => ({
-                ...prev,
-                pages: {
-                  ...(prev.pages ?? {}),
-                  [page]: { ...(prev.pages?.[page] ?? {}), appliedPresetId: undefined },
-                },
-              }))
-            }
+            key={currentPage}
+            pdfDataUrl={workspace.pdfDataUrl || workspace.pdfBlobUrl || ""}
+            pageNumber={currentPage}
+            presets={workspace.presets}
+            appliedPresetId={appliedPresetId}
+            onCreatePreset={createPreset}
+            onDeletePreset={deletePreset}
+            onApplyPreset={handleApplyPreset}
+            onClearApplied={handleClearApplied}
+            onUpdatePresetName={updatePresetName}
           />
-        </div>
+        </main>
       </div>
     </div>
-  );
+  )
 }
 
+// Extracted component for top bar
+interface TopBarProps {
+  pdfName?: string
+  totalPages?: number
+  isLoadingPdf: boolean
+  isExporting: boolean
+  hasPresets: boolean
+  onReset: () => void
+  onUpload: (file: File) => void
+  onExport: () => void
+}
 
+function TopBar({ pdfName, totalPages, isLoadingPdf, isExporting, hasPresets, onReset, onUpload, onExport }: TopBarProps) {
+  const displayTotal = totalPages ?? "?"
 
+  return (
+    <div className="top-bar border-b border-gray-200 pb-4">
+      <div>
+        <div className="title">{pdfName ?? "PDF"}</div>
+        <div className="subtle">{displayTotal} pages total</div>
+      </div>
 
+      <div className="row">
+        <button 
+          className="btn" 
+          onClick={onExport}
+          disabled={!hasPresets || isExporting}
+          title={!hasPresets ? "Create a crop preset first" : "Export all pages with crop applied"}
+        >
+          {isExporting ? "Exporting…" : "Export Cropped PDF"}
+        </button>
+        <button className="btn-ghost" onClick={onReset}>
+          Reset
+        </button>
+        <Uploader disabled={isLoadingPdf} onUpload={onUpload} label="Replace PDF" />
+      </div>
+    </div>
+  )
+}
+
+export default App

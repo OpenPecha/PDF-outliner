@@ -14,6 +14,7 @@ export type PageState = {
 export type WorkspaceState = {
   pdfName?: string;
   pdfDataUrl?: string; // base64 data URL so we can persist (only first 5 pages)
+  originalPdfDataUrl?: string; // Full original PDF for export (stored separately)
   numPages?: number; // Number of pages available (extracted pages)
   totalPages?: number; // Original total pages in the PDF (for reference)
   presets: CropPreset[];
