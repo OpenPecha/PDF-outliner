@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://OpenPecha.github.io/pdf-outline-marker",
+  "homepage": "http://buddhist.tools/",
   "scripts": {
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
