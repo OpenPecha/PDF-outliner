@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/',
+  base: '/PDF-outliner/',
   plugins: [react(), tailwindcss()],
   server: {
     port: 3000,
