@@ -5,7 +5,6 @@
   "type": "module",
   "homepage": "http://buddhist.tools",
   "scripts": {
-"predeploy": "echo 'buddhist.tools' > dist/CNAME",
 "deploy": "gh-pages -d dist",
     "dev": "vite",
     "build": "vite build",
