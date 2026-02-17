@@ -15,8 +15,9 @@ import "../App.css"
   new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString()
 
 // Register service worker for offline caching
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
+// Skip registration in chrome-extension context (Cache API doesn't support chrome-extension:// URLs)
+if ("serviceWorker" in navigator && globalThis.location.protocol !== "chrome-extension:") {
+  globalThis.addEventListener("load", () => {
     navigator.serviceWorker
       .register("/sw.js")
       .then((registration) => {
