@@ -37,6 +37,12 @@ self.addEventListener("fetch", (event) => {
   const { request } = event
   const url = new URL(request.url)
 
+  // Skip caching for unsupported URL schemes (chrome-extension://, etc.)
+  if (url.protocol === "chrome-extension:" || url.protocol === "chrome:") {
+    event.respondWith(fetch(request))
+    return
+  }
+
   // Cache PDF.js worker files
   if (url.pathname.includes("pdf.worker") || url.pathname.includes("pdfjs-dist")) {
     event.respondWith(
@@ -47,7 +53,13 @@ self.addEventListener("fetch", (event) => {
         try {
           const response = await fetch(request)
           if (response.ok) {
-            cache.put(request, response.clone())
+            // Only cache if the request scheme is supported
+            try {
+              await cache.put(request, response.clone())
+            } catch (cacheError) {
+              // Ignore cache errors for unsupported schemes
+              console.warn("Failed to cache request:", cacheError)
+            }
           }
           return response
         } catch (error) {
@@ -67,7 +79,11 @@ self.addEventListener("fetch", (event) => {
         if (response.ok && request.method === "GET") {
           const responseClone = response.clone()
           caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseClone)
+            // Wrap cache.put in try-catch to handle unsupported schemes gracefully
+            cache.put(request, responseClone).catch((error) => {
+              // Ignore cache errors for unsupported schemes
+              console.warn("Failed to cache request:", error)
+            })
           })
         }
         return response
