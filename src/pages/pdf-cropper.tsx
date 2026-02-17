@@ -178,7 +178,7 @@ export default function PdfCropperPage() {
                         Exporting…
                       </span>
                     ) : (
-                      "Export"
+                      "Export Cropped PDF"
                     )}
                   </button>
                   <button 
@@ -186,9 +186,9 @@ export default function PdfCropperPage() {
                     onClick={handleReset}
                     aria-label="Reset workspace"
                   >
-                    Reset
+                    Back
                   </button>
-                  <Uploader disabled={isLoadingPdf} onUpload={handleUploadPdf} label="Replace PDF" />
+                  <Uploader disabled={isLoadingPdf} onUpload={handleUploadPdf} label="Reset PDF" />
                 </div>
               </div>
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3">

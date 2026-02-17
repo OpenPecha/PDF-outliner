@@ -78,10 +78,10 @@ function PageCropper({
         // Blob URL - fetch and convert to ArrayBuffer
         const response = await fetch(pdfDataUrl)
         const arrayBuffer = await response.arrayBuffer()
-        pdfDoc = await (pdfjsLib as any).getDocument({ data: arrayBuffer }).promise
+        pdfDoc = await (pdfjsLib as any).getDocument({ data: arrayBuffer,useSystemFonts: true }).promise
       } else {
         // Data URL - convert to Uint8Array
-        pdfDoc = await (pdfjsLib as any).getDocument({ data: dataUrlToUint8Array(pdfDataUrl) }).promise
+        pdfDoc = await (pdfjsLib as any).getDocument({ data: dataUrlToUint8Array(pdfDataUrl),useSystemFonts: true }).promise
       }
 
       const { canvas, width, height } = await renderPdfPageToCanvas(pdfDoc, pageNumber, 900)

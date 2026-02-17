@@ -69,9 +69,17 @@ export async function renderPdfPageToCanvas(
   const viewport = page.getViewport({ scale })
 
   const canvas = document.createElement("canvas")
-  const ctx = canvas.getContext("2d")
+  const ctx = canvas.getContext("2d", {
+    // Enable better text rendering for non-Latin fonts
+    alpha: true,
+    desynchronized: false,
+  })
   if (!ctx) throw new Error("2D context not available")
 
+  // Configure canvas for better text rendering
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = "high"
+  
   canvas.width = Math.floor(viewport.width)
   canvas.height = Math.floor(viewport.height)
 
