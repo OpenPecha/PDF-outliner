@@ -40,6 +40,7 @@ interface UseWorkspaceReturn {
   applyPreset: (page: number, presetId: string) => Promise<void>
   clearAppliedPreset: (page: number) => Promise<void>
   updatePresetName: (presetId: string, name: string) => Promise<void>
+  updatePreset: (presetId: string, updates: Partial<CropPreset>) => Promise<void>
   getPdfBlobForExport: () => Promise<Blob | null>
 }
 
@@ -276,6 +277,25 @@ export function useWorkspace(): UseWorkspaceReturn {
     [workspace.pdfId]
   )
 
+  const updatePreset = useCallback(
+    async (presetId: string, updates: Partial<CropPreset>) => {
+      if (!workspace.pdfId) return
+
+      // Update in IndexedDB
+      const presets = await getCropPresets(workspace.pdfId)
+      const preset = presets.find((p) => p.id === presetId)
+      if (preset) {
+        await storeCropPreset(workspace.pdfId, { ...preset, ...updates })
+      }
+
+      setWorkspace((prev) => ({
+        ...prev,
+        presets: prev.presets.map((p) => (p.id === presetId ? { ...p, ...updates } : p)),
+      }))
+    },
+    [workspace.pdfId]
+  )
+
   const getPdfBlobForExport = useCallback(async (): Promise<Blob | null> => {
     if (!workspace.pdfId) return null
     return await getPdfBlob(workspace.pdfId)
@@ -302,6 +322,7 @@ export function useWorkspace(): UseWorkspaceReturn {
     applyPreset,
     clearAppliedPreset,
     updatePresetName,
+    updatePreset,
     getPdfBlobForExport,
   }
 }

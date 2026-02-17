@@ -1,5 +1,4 @@
 import { useState, useCallback } from "react"
-import { Link } from "react-router-dom"
 import * as pdfjsLib from "pdfjs-dist"
 import "pdfjs-dist/build/pdf.worker.mjs"
 import { exportCroppedPdf, downloadPdfBytes } from "../utils/lib"
@@ -40,6 +39,7 @@ export default function PdfCropperPage() {
     applyPreset,
     clearAppliedPreset,
     updatePresetName,
+    updatePreset,
     getPdfBlobForExport,
     isLoading: workspaceLoading,
   } = useWorkspace()
@@ -120,20 +120,36 @@ export default function PdfCropperPage() {
   // Early return for empty state
   if (workspaceLoading) {
     return (
-      <div className="container mx-auto h-screen flex flex-col items-center justify-center">
-        <div className="notice">Loading workspace…</div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-6 py-4">
+          <div className="text-gray-600 font-medium">Loading workspace…</div>
+        </div>
       </div>
     )
   }
 
   if (!workspace.pdfDataUrl) {
     return (
-      <div className="container mx-auto h-screen flex flex-col items-center justify-center">
-        <h2 className="h2">PDF Crop Workspace (GUI)</h2>
-        <Uploader disabled={isLoadingPdf} onUpload={handleUploadPdf} />
-        {isLoadingPdf && <div className="notice">Loading PDF…</div>}
-        <div className="notice mt-16">
-          Tip: After upload, open <code>/?p=1</code>, <code>/?p=2</code>, <code>/?p=3</code>.
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 px-4">
+        <div className="max-w-md w-full space-y-6">
+          <div className="text-center space-y-2">
+            <h2 className="text-3xl font-bold text-gray-900">PDF Crop Workspace</h2>
+            <p className="text-gray-500 text-sm">Upload a PDF to get started</p>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
+            <Uploader disabled={isLoadingPdf} onUpload={handleUploadPdf} />
+            {isLoadingPdf && (
+              <div className="text-center py-3 text-sm text-gray-600 font-medium">
+                Loading PDF…
+              </div>
+            )}
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
+            <p className="font-medium mb-1">💡 Tip</p>
+            <p>
+              After upload, navigate to pages using <code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs font-mono">/?p=1</code>, <code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs font-mono">/?p=2</code>, <code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs font-mono">/?p=3</code>
+            </p>
+          </div>
         </div>
       </div>
     )
@@ -142,88 +158,67 @@ export default function PdfCropperPage() {
   const appliedPresetId = workspace.pages?.[currentPage]?.appliedPresetId
 
   return (
-    <div className="shell">
-      <TopBar
-        pdfName={workspace.pdfName}
-        totalPages={workspace.totalPages}
-        isLoadingPdf={isLoadingPdf}
-        isExporting={isExporting}
-        hasPresets={workspace.presets.length > 0}
-        onReset={handleReset}
-        onUpload={handleUploadPdf}
-        onExport={handleExportCroppedPdf}
-      />
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="flex flex-col lg:flex-row gap-6">
+          <aside className="lg:border-r lg:border-gray-200 lg:pr-6 overflow-x-hidden lg:w-1/4">
+            <div className="space-y-4 sticky top-6">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3">
+                <div className="flex flex-col gap-2">
+                  <button 
+                    className="w-full px-3 py-2 bg-gray-900 cursor-pointer text-white text-sm font-semibold rounded-lg hover:bg-gray-800 active:bg-gray-950 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow-md disabled:hover:shadow-sm" 
+                    onClick={handleExportCroppedPdf}
+                    disabled={workspace.presets.length === 0 || isExporting}
+                    title={workspace.presets.length === 0 ? "Create a crop preset first" : "Export all pages with crop applied"}
+                    aria-label={isExporting ? "Exporting PDF" : "Export cropped PDF"}
+                  >
+                    {isExporting ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                        Exporting…
+                      </span>
+                    ) : (
+                      "Export"
+                    )}
+                  </button>
+                  <button 
+                    className="w-full px-3 py-2 bg-white cursor-pointer text-gray-700 text-sm font-semibold rounded-lg border border-gray-300 hover:bg-gray-50 active:bg-gray-100 transition-all duration-200 shadow-sm hover:shadow-md" 
+                    onClick={handleReset}
+                    aria-label="Reset workspace"
+                  >
+                    Reset
+                  </button>
+                  <Uploader disabled={isLoadingPdf} onUpload={handleUploadPdf} label="Replace PDF" />
+                </div>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3">
+                <h3 className="text-sm font-bold text-gray-900 mb-3 uppercase tracking-wide">Rendered Pages</h3>
+                <PageNav
+                  pages={availablePages}
+                  current={currentPage}
+                  onSelect={navigateToPage}
+                />
+              </div>
+            </div>
+          </aside>
 
-      <div className="grid">
-        <aside className="left">
-          <h3 className="h3">Rendered Pages</h3>
-          <PageNav
-            pages={availablePages}
-            current={currentPage}
-            onSelect={navigateToPage}
-          />
-        </aside>
-
-        <main className="right">
-          <PageCropper
-            key={currentPage}
-            pdfDataUrl={workspace.pdfDataUrl || workspace.pdfBlobUrl || ""}
-            pageNumber={currentPage}
-            presets={workspace.presets}
-            appliedPresetId={appliedPresetId}
-            onCreatePreset={createPreset}
-            onDeletePreset={deletePreset}
-            onApplyPreset={handleApplyPreset}
-            onClearApplied={handleClearApplied}
-            onUpdatePresetName={updatePresetName}
-          />
-        </main>
-      </div>
-    </div>
-  )
-}
-
-// Extracted component for top bar
-interface TopBarProps {
-  pdfName?: string
-  totalPages?: number
-  isLoadingPdf: boolean
-  isExporting: boolean
-  hasPresets: boolean
-  onReset: () => void
-  onUpload: (file: File) => void
-  onExport: () => void
-}
-
-function TopBar({ pdfName, totalPages, isLoadingPdf, isExporting, hasPresets, onReset, onUpload, onExport }: TopBarProps) {
-  const displayTotal = totalPages ?? "?"
-
-  return (
-    <div className="top-bar border-b border-gray-200 pb-4">
-      <div>
-        <div className="flex items-center gap-3">
-          <Link to="/" className="text-gray-500 hover:text-gray-700 text-sm font-medium">
-            ← Home
-          </Link>
-          <div className="title">{pdfName ?? "PDF"}</div>
+          <main className="min-w-0 flex-1">
+            <PageCropper
+              key={currentPage}
+              pdfDataUrl={workspace.pdfDataUrl || workspace.pdfBlobUrl || ""}
+              pageNumber={currentPage}
+              presets={workspace.presets}
+              appliedPresetId={appliedPresetId}
+              onCreatePreset={createPreset}
+              onDeletePreset={deletePreset}
+              onApplyPreset={handleApplyPreset}
+              onUpdatePresetName={updatePresetName}
+              onUpdatePreset={updatePreset}
+            />
+          </main>
         </div>
-        <div className="subtle">{displayTotal} pages total</div>
-      </div>
-
-      <div className="row">
-        <button 
-          className="btn" 
-          onClick={onExport}
-          disabled={!hasPresets || isExporting}
-          title={!hasPresets ? "Create a crop preset first" : "Export all pages with crop applied"}
-        >
-          {isExporting ? "Exporting…" : "Export Cropped PDF"}
-        </button>
-        <button className="btn-ghost" onClick={onReset}>
-          Reset
-        </button>
-        <Uploader disabled={isLoadingPdf} onUpload={onUpload} label="Replace PDF" />
       </div>
     </div>
   )
 }
+

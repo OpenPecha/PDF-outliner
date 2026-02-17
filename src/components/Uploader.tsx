@@ -20,21 +20,19 @@ const Uploader = memo(function Uploader({
     if (inputRef.current) inputRef.current.value = ""
   }, [onUpload])
 
-  const buttonStyle = disabled ? { opacity: 0.6 } : undefined
-
   return (
-    <label className=" block">
+    <label className="block cursor-pointer w-full">
       <input
         ref={inputRef}
         type="file"
         accept="application/pdf"
         disabled={disabled}
-        style={{ display: "none" }}
+        className="hidden"
         onChange={handleChange}
+        aria-label={label}
       />
       <span
-        className={`btn ${disabled ? "btn-disabled" : ""}`}
-        style={buttonStyle}
+        className="inline-block w-full text-center px-4 py-2 bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300 hover:bg-gray-50 active:bg-gray-100 transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:shadow-sm"
       >
         {label}
       </span>

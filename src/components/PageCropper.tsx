@@ -13,8 +13,8 @@ interface PageCropperProps {
   onCreatePreset: (preset: CropPreset) => Promise<void>
   onDeletePreset: (presetId: string) => void
   onApplyPreset: (presetId: string) => void
-  onClearApplied: () => void
   onUpdatePresetName: (presetId: string, name: string) => void
+  onUpdatePreset: (presetId: string, updates: Partial<CropPreset>) => Promise<void>
 }
 
 interface DragState {
@@ -24,6 +24,14 @@ interface DragState {
   y: number
   w: number
   h: number
+}
+
+interface MoveDragState {
+  presetId: string
+  startX: number
+  startY: number
+  offsetX: number
+  offsetY: number
 }
 
 interface Size {
@@ -41,8 +49,8 @@ function PageCropper({
   onCreatePreset,
   onDeletePreset,
   onApplyPreset,
-  onClearApplied,
   onUpdatePresetName,
+  onUpdatePreset,
 }: PageCropperProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -50,14 +58,11 @@ function PageCropper({
   const [isRendering, setIsRendering] = useState(true)
   const [imgSize, setImgSize] = useState<Size>({ w: 0, h: 0 })
   const [displaySize, setDisplaySize] = useState<Size>({ w: 0, h: 0 })
+  const [overlayOffset, setOverlayOffset] = useState<Size>({ w: 0, h: 0 })
   const [drag, setDrag] = useState<DragState | null>(null)
+  const [moveDrag, setMoveDrag] = useState<MoveDragState | null>(null)
   const [selectedPresetId, setSelectedPresetId] = useState<string | undefined>(appliedPresetId)
   const [cropPreviewUrl, setCropPreviewUrl] = useState<string | null>(null)
-
-  const selectedPreset = useMemo(
-    () => presets.find(p => p.id === selectedPresetId),
-    [presets, selectedPresetId]
-  )
 
   // Render PDF page (progressive/lazy loading)
   useEffect(() => {
@@ -96,7 +101,29 @@ function PageCropper({
 
         requestAnimationFrame(() => {
           const rect = domCanvas.getBoundingClientRect()
-          setDisplaySize({ w: rect.width, h: rect.height })
+          const canvasAspectRatio = width / height
+          const containerAspectRatio = rect.width / rect.height
+
+          let actualWidth: number
+          let actualHeight: number
+          let offsetX = 0
+          let offsetY = 0
+
+          // Calculate actual rendered image size with object-contain
+          if (canvasAspectRatio > containerAspectRatio) {
+            // Canvas is wider - fit to width, centered vertically
+            actualWidth = rect.width
+            actualHeight = rect.width / canvasAspectRatio
+            offsetY = (rect.height - actualHeight) / 2
+          } else {
+            // Canvas is taller - fit to height, centered horizontally
+            actualHeight = rect.height
+            actualWidth = rect.height * canvasAspectRatio
+            offsetX = (rect.width - actualWidth) / 2
+          }
+
+          setDisplaySize({ w: actualWidth, h: actualHeight })
+          setOverlayOffset({ w: offsetX, h: offsetY })
         })
       }
 
@@ -108,16 +135,39 @@ function PageCropper({
     return () => { cancelled = true }
   }, [pdfDataUrl, pageNumber])
 
-  // Track display size on resize
+  // Track display size on resize - calculate actual rendered image size accounting for object-contain
   useEffect(() => {
     const updateDisplaySize = () => {
       const domCanvas = document.getElementById("pdf-canvas") as HTMLCanvasElement | null
-      if (domCanvas) {
-        const rect = domCanvas.getBoundingClientRect()
-        setDisplaySize({ w: rect.width, h: rect.height })
+      if (!domCanvas || imgSize.w === 0 || imgSize.h === 0) return
+
+      const rect = domCanvas.getBoundingClientRect()
+      const canvasAspectRatio = imgSize.w / imgSize.h
+      const containerAspectRatio = rect.width / rect.height
+
+      let actualWidth: number
+      let actualHeight: number
+      let offsetX = 0
+      let offsetY = 0
+
+      // Calculate actual rendered image size with object-contain
+      if (canvasAspectRatio > containerAspectRatio) {
+        // Canvas is wider - fit to width, centered vertically
+        actualWidth = rect.width
+        actualHeight = rect.width / canvasAspectRatio
+        offsetY = (rect.height - actualHeight) / 2
+      } else {
+        // Canvas is taller - fit to height, centered horizontally
+        actualHeight = rect.height
+        actualWidth = rect.height * canvasAspectRatio
+        offsetX = (rect.width - actualWidth) / 2
       }
+
+      setDisplaySize({ w: actualWidth, h: actualHeight })
+      setOverlayOffset({ w: offsetX, h: offsetY })
     }
 
+    updateDisplaySize()
     window.addEventListener("resize", updateDisplaySize)
 
     const container = containerRef.current
@@ -128,12 +178,39 @@ function PageCropper({
       window.removeEventListener("resize", updateDisplaySize)
       observer.disconnect()
     }
-  }, [])
+  }, [imgSize])
 
   // Sync selected preset with applied preset
   useEffect(() => {
     setSelectedPresetId(appliedPresetId)
   }, [appliedPresetId])
+
+  // Automatically generate preview when a preset is selected
+  useEffect(() => {
+    const presetIdToPreview = selectedPresetId || appliedPresetId
+    
+    if (isRendering || !presetIdToPreview || !canvasRef.current || imgSize.w === 0 || imgSize.h === 0) {
+      if (!presetIdToPreview) {
+        setCropPreviewUrl(null)
+      }
+      return
+    }
+
+    const preset = presets.find(p => p.id === presetIdToPreview)
+    if (!preset) {
+      setCropPreviewUrl(null)
+      return
+    }
+
+    const src = canvasRef.current
+    const x = clamp(preset.x, 0, src.width - 1)
+    const y = clamp(preset.y, 0, src.height - 1)
+    const w = clamp(preset.width, 1, src.width - x)
+    const h = clamp(preset.height, 1, src.height - y)
+
+    const url = cropCanvasToDataUrl(src, { x, y, width: w, height: h })
+    setCropPreviewUrl(url)
+  }, [isRendering, selectedPresetId, appliedPresetId, presets, imgSize])
 
   const getRelativePos = useCallback((e: React.MouseEvent) => {
     const el = containerRef.current
@@ -153,12 +230,33 @@ function PageCropper({
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (isRendering) return
+    if (moveDrag) return // Don't start creating if we're already moving a preset
+    
+    // Check if clicking on a selected preset overlay (handled by PresetOverlay)
+    // This handler is for creating new presets on empty canvas
     if (presets.length >= MAX_PRESETS_PER_PDF) return
     const { x, y } = getRelativePos(e)
     setDrag({ startX: x, startY: y, x, y, w: 0, h: 0 })
-  }, [isRendering, presets.length, getRelativePos])
+  }, [isRendering, presets.length, moveDrag, getRelativePos])
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (moveDrag) {
+      // Handle moving a preset
+      const { x, y } = getRelativePos(e)
+      const preset = presets.find(p => p.id === moveDrag.presetId)
+      if (!preset) {
+        setMoveDrag(null)
+        return
+      }
+
+      // Calculate new position
+      const newX = clamp(x - moveDrag.offsetX, 0, imgSize.w - preset.width)
+      const newY = clamp(y - moveDrag.offsetY, 0, imgSize.h - preset.height)
+
+      setMoveDrag(prev => prev ? { ...prev, startX: newX, startY: newY } : null)
+      return
+    }
+
     if (!drag) return
     const { x, y } = getRelativePos(e)
 
@@ -170,9 +268,27 @@ function PageCropper({
       const h = Math.abs(y - prev.startY)
       return { ...prev, x: left, y: top, w, h }
     })
-  }, [drag, getRelativePos])
+  }, [drag, moveDrag, presets, imgSize, getRelativePos])
 
   const handleMouseUp = useCallback(() => {
+    if (moveDrag) {
+      // Handle finishing moving a preset
+      const preset = presets.find(p => p.id === moveDrag.presetId)
+      if (preset) {
+        const newX = clamp(moveDrag.startX, 0, imgSize.w - preset.width)
+        const newY = clamp(moveDrag.startY, 0, imgSize.h - preset.height)
+        
+        if (newX !== preset.x || newY !== preset.y) {
+          onUpdatePreset(moveDrag.presetId, { x: Math.round(newX), y: Math.round(newY) }).catch((error: unknown) => {
+            const message = error instanceof Error ? error.message : "Failed to update preset"
+            alert(message)
+          })
+        }
+      }
+      setMoveDrag(null)
+      return
+    }
+
     if (!drag) return
 
     if (drag.w >= MIN_DRAG_SIZE && drag.h >= MIN_DRAG_SIZE) {
@@ -199,28 +315,31 @@ function PageCropper({
     }
 
     setDrag(null)
-  }, [drag, presets.length, onCreatePreset])
+  }, [drag, moveDrag, presets, imgSize, onCreatePreset, onUpdatePreset])
 
   const handleMouseLeave = useCallback(() => {
     setDrag(null)
+    setMoveDrag(null)
   }, [])
 
-  const handlePreviewCrop = useCallback(() => {
-    const src = canvasRef.current
-    if (!src || !selectedPreset) return
+  const handlePresetDragStart = useCallback((presetId: string, e: React.MouseEvent) => {
+    if (isRendering) return
+    const preset = presets.find(p => p.id === presetId)
+    if (!preset) return
 
-    const x = clamp(selectedPreset.x, 0, src.width - 1)
-    const y = clamp(selectedPreset.y, 0, src.height - 1)
-    const w = clamp(selectedPreset.width, 1, src.width - x)
-    const h = clamp(selectedPreset.height, 1, src.height - y)
+    const { x, y } = getRelativePos(e)
+    const offsetX = x - preset.x
+    const offsetY = y - preset.y
 
-    const url = cropCanvasToDataUrl(src, { x, y, width: w, height: h })
-    setCropPreviewUrl(url)
-  }, [selectedPreset])
-
-  const handleApplyPreset = useCallback(() => {
-    if (selectedPresetId) onApplyPreset(selectedPresetId)
-  }, [selectedPresetId, onApplyPreset])
+    setSelectedPresetId(presetId)
+    setMoveDrag({
+      presetId,
+      startX: preset.x,
+      startY: preset.y,
+      offsetX,
+      offsetY,
+    })
+  }, [isRendering, presets, getRelativePos])
 
   const scaleFactors = useMemo(() => ({
     x: displaySize.w > 0 ? displaySize.w / imgSize.w : 1,
@@ -232,28 +351,25 @@ function PageCropper({
   return (
     <div>
       <CropperHeader
-        pageNumber={pageNumber}
-        hasSelectedPreset={!!selectedPresetId}
-        hasPresetToPreview={!!selectedPreset}
         canCreatePreset={canCreatePreset}
-        onApplyPreset={handleApplyPreset}
-        onClearApplied={onClearApplied}
-        onPreviewCrop={handlePreviewCrop}
       />
 
-      <div className="workspace-row mt-12">
+      <div className="flex flex-col lg:flex-row gap-4">
         <CanvasArea
           containerRef={containerRef}
           displaySize={displaySize}
           imgSize={imgSize}
+          overlayOffset={overlayOffset}
           isRendering={isRendering}
           presets={presets}
           selectedPresetId={selectedPresetId}
           appliedPresetId={appliedPresetId}
           drag={drag}
+          moveDrag={moveDrag}
           scaleFactors={scaleFactors}
           canCreatePreset={canCreatePreset}
           onSelectPreset={setSelectedPresetId}
+          onPresetDragStart={handlePresetDragStart}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -263,18 +379,13 @@ function PageCropper({
         <PresetSidebar
           presets={presets}
           selectedPresetId={selectedPresetId}
-          appliedPresetId={appliedPresetId}
-          selectedPreset={selectedPreset}
           cropPreviewUrl={cropPreviewUrl}
           onSelectPreset={setSelectedPresetId}
           onDeletePreset={onDeletePreset}
-          onUpdatePresetName={onUpdatePresetName}
         />
       </div>
 
-      <div className="notice mt-12">
-        Coordinates are stored in <strong>rendered image pixel space</strong> (canvas pixels).
-      </div>
+    
     </div>
   )
 }
@@ -282,37 +393,21 @@ function PageCropper({
 // Sub-components
 
 interface CropperHeaderProps {
-  pageNumber: number
-  hasSelectedPreset: boolean
-  hasPresetToPreview: boolean
-  canCreatePreset: boolean
-  onApplyPreset: () => void
-  onClearApplied: () => void
-  onPreviewCrop: () => void
+  readonly canCreatePreset: boolean
 }
 
 const CropperHeader = memo(function CropperHeader({
-  pageNumber,
-  hasPresetToPreview,
   canCreatePreset,
-  onPreviewCrop,
 }: CropperHeaderProps) {
   return (
-    <div className="row-between">
-      <div>
-        <h3 className="h3">Page {pageNumber}</h3>
-        <div className="subtle">
+    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+      <div className="space-y-1">
+        <div className="text-sm text-gray-500">
           {canCreatePreset 
             ? "Draw a rectangle on the page to create a crop preset."
             : `Maximum ${MAX_PRESETS_PER_PDF} preset${MAX_PRESETS_PER_PDF > 1 ? 's' : ''} per PDF allowed. Delete the existing preset to create a new one.`
           }
         </div>
-      </div>
-
-      <div className="row">
-        <button className="btn" onClick={onPreviewCrop} disabled={!hasPresetToPreview}>
-          Preview crop
-        </button>
       </div>
     </div>
   )
@@ -322,14 +417,17 @@ interface CanvasAreaProps {
   containerRef: React.RefObject<HTMLDivElement | null>
   displaySize: Size
   imgSize: Size
+  overlayOffset: Size
   isRendering: boolean
   presets: CropPreset[]
   selectedPresetId?: string
   appliedPresetId?: string
   drag: DragState | null
+  moveDrag: MoveDragState | null
   scaleFactors: { x: number; y: number }
   canCreatePreset: boolean
   onSelectPreset: (id: string) => void
+  onPresetDragStart: (presetId: string, e: React.MouseEvent) => void
   onMouseDown: (e: React.MouseEvent) => void
   onMouseMove: (e: React.MouseEvent) => void
   onMouseUp: () => void
@@ -340,25 +438,30 @@ const CanvasArea = memo(function CanvasArea({
   containerRef,
   displaySize,
   imgSize,
+  overlayOffset,
   isRendering,
   presets,
   selectedPresetId,
   appliedPresetId,
   drag,
+  moveDrag,
   scaleFactors,
   canCreatePreset,
   onSelectPreset,
+  onPresetDragStart,
   onMouseDown,
   onMouseMove,
   onMouseUp,
   onMouseLeave,
 }: CanvasAreaProps) {
   return (
-    <div className="canvas-wrap">
+    <div className="relative border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm max-h-[80vh] flex-1">
       <div
         ref={containerRef}
-        className="canvas-overlay"
+        className="absolute z-10"
         style={{ 
+          left: overlayOffset.w,
+          top: overlayOffset.h,
           width: displaySize.w || imgSize.w, 
           height: displaySize.h || imgSize.h,
           cursor: canCreatePreset ? 'crosshair' : 'not-allowed'
@@ -368,36 +471,50 @@ const CanvasArea = memo(function CanvasArea({
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseLeave}
       >
-        {presets.map(p => (
-          <PresetOverlay
-            key={p.id}
-            preset={p}
-            isSelected={p.id === selectedPresetId}
-            isApplied={p.id === appliedPresetId}
-            scaleFactors={scaleFactors}
-            onSelect={onSelectPreset}
-          />
-        ))}
+        {presets.map(p => {
+          const isMoving = moveDrag?.presetId === p.id
+          const displayPreset = isMoving && moveDrag ? {
+            ...p,
+            x: moveDrag.startX,
+            y: moveDrag.startY,
+          } : p
+
+          return (
+            <PresetOverlay
+              key={p.id}
+              preset={displayPreset}
+              isSelected={p.id === selectedPresetId}
+              isApplied={p.id === appliedPresetId}
+              scaleFactors={scaleFactors}
+              onSelect={onSelectPreset}
+              onDragStart={onPresetDragStart}
+            />
+          )
+        })}
 
         {drag && (
           <div
+            className="absolute border-2 border-dashed border-gray-900 bg-black/5 pointer-events-none"
             style={{
-              position: "absolute",
               left: drag.x * scaleFactors.x,
               top: drag.y * scaleFactors.y,
               width: drag.w * scaleFactors.x,
               height: drag.h * scaleFactors.y,
-              border: "2px dashed #111",
-              background: "rgba(0,0,0,0.04)",
-              pointerEvents: "none",
             }}
           />
         )}
       </div>
 
-      <canvas id="pdf-canvas" className="canvas" />
+      <canvas id="pdf-canvas" className="block w-full max-h-[80vh] object-contain" />
 
-      {isRendering && <div className="loading-cover">Rendering…</div>}
+      {isRendering && (
+        <div className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-20">
+          <div className="flex items-center gap-3 text-gray-700 font-semibold">
+            <span className="inline-block w-5 h-5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin"></span>
+            Rendering…
+          </div>
+        </div>
+      )}
     </div>
   )
 })
@@ -408,6 +525,7 @@ interface PresetOverlayProps {
   isApplied: boolean
   scaleFactors: { x: number; y: number }
   onSelect: (id: string) => void
+  onDragStart: (presetId: string, e: React.MouseEvent) => void
 }
 
 const PresetOverlay = memo(function PresetOverlay({
@@ -416,27 +534,55 @@ const PresetOverlay = memo(function PresetOverlay({
   isApplied,
   scaleFactors,
   onSelect,
+  onDragStart,
 }: PresetOverlayProps) {
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (isSelected) {
+      // Start dragging if this preset is selected
+      onDragStart(preset.id, e)
+    } else {
+      // Just select if not selected
+      onSelect(preset.id)
+    }
+  }, [preset.id, isSelected, onSelect, onDragStart])
+
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    onSelect(preset.id)
+    // Only select if not already selected (to avoid interfering with drag)
+    if (!isSelected) {
+      onSelect(preset.id)
+    }
+  }, [preset.id, isSelected, onSelect])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault()
+      e.stopPropagation()
+      onSelect(preset.id)
+    }
   }, [preset.id, onSelect])
 
   return (
     <div
+      onMouseDown={handleMouseDown}
       onClick={handleClick}
-      title={`${preset.name ?? preset.id} (${preset.x},${preset.y},${preset.width},${preset.height})`}
+      onKeyDown={handleKeyDown}
+      title={`${preset.name ?? preset.id} (${preset.x},${preset.y},${preset.width},${preset.height})${isSelected ? " - Drag to move" : ""}`}
+      className={`absolute transition-all duration-200 ${
+        isSelected 
+          ? "border-2 border-gray-900 bg-gray-900/10 shadow-lg cursor-move" 
+          : "border border-gray-500 bg-black/6 hover:bg-black/8 cursor-pointer"
+      } ${isApplied ? "ring-2 ring-inset ring-gray-400" : ""}`}
       style={{
-        position: "absolute",
         left: preset.x * scaleFactors.x,
         top: preset.y * scaleFactors.y,
         width: preset.width * scaleFactors.x,
         height: preset.height * scaleFactors.y,
-        border: isSelected ? "2px solid #111" : "1px solid #666",
-        background: "rgba(0,0,0,0.06)",
-        boxShadow: isApplied ? "0 0 0 2px rgba(0,0,0,0.25) inset" : undefined,
-        cursor: "pointer",
       }}
+      aria-label={`Crop preset ${preset.name ?? preset.id}${isSelected ? " - Drag to move" : ""}`}
+      role="button"
+      tabIndex={0}
     />
   )
 })
@@ -444,45 +590,28 @@ const PresetOverlay = memo(function PresetOverlay({
 interface PresetSidebarProps {
   presets: CropPreset[]
   selectedPresetId?: string
-  appliedPresetId?: string
-  selectedPreset?: CropPreset
   cropPreviewUrl: string | null
   onSelectPreset: (id: string) => void
   onDeletePreset: (id: string) => void
-  onUpdatePresetName: (id: string, name: string) => void
 }
 
 const PresetSidebar = memo(function PresetSidebar({
   presets,
   selectedPresetId,
-  appliedPresetId,
-  selectedPreset,
   cropPreviewUrl,
   onSelectPreset,
   onDeletePreset,
-  onUpdatePresetName,
 }: PresetSidebarProps) {
-  const appliedPresetName = useMemo(() => {
-    if (!appliedPresetId) return "None"
-    const preset = presets.find(p => p.id === appliedPresetId)
-    return preset?.name ?? "Preset"
-  }, [presets, appliedPresetId])
-
-  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (selectedPreset) {
-      onUpdatePresetName(selectedPreset.id, e.target.value)
-    }
-  }, [selectedPreset, onUpdatePresetName])
 
   return (
-    <div className="sidebar">
-      <div className="card">
-        <div className="card-title">Presets</div>
+    <div className="space-y-2 lg:w-1/4">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3">
+        <div className="text-xs font-bold text-gray-900 mb-2 uppercase tracking-wide">Presets</div>
 
         {presets.length === 0 ? (
-          <div className="subtle">No presets yet. Draw a rectangle on the page.</div>
+          <div className="text-sm text-gray-500 py-1">No presets yet. Draw a rectangle on the page.</div>
         ) : (
-          <div style={{ display: "grid", gap: 8 }}>
+          <div className="grid gap-1.5">
             {presets.map(p => (
               <PresetItem
                 key={p.id}
@@ -496,17 +625,16 @@ const PresetSidebar = memo(function PresetSidebar({
         )}
       </div>
 
-    
       {cropPreviewUrl && (
-              <div>
-                <div className="card-title">Cropped Preview</div>
-                <img
-                  src={cropPreviewUrl}
-                  alt="Cropped preview"
-                  style={{ width: "100%", borderRadius: 10 }}
-                />
-              </div>
-            )}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3">
+          <div className="text-xs font-bold text-gray-900 mb-2 uppercase tracking-wide">Cropped Preview</div>
+          <img
+            src={cropPreviewUrl}
+            alt="Cropped preview"
+            className="w-full rounded-lg border border-gray-200"
+          />
+        </div>
+      )}
     </div>
   )
 })
@@ -527,18 +655,38 @@ const PresetItem = memo(function PresetItem({
   const handleSelect = useCallback(() => onSelect(preset.id), [preset.id, onSelect])
   const handleDelete = useCallback(() => onDelete(preset.id), [preset.id, onDelete])
 
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault()
+      onSelect(preset.id)
+    }
+  }, [preset.id, onSelect])
+
   return (
-    <div className="preset-row">
+    <div className="grid grid-cols-[1fr_40px] gap-2 items-start">
       <button
-        className={isSelected ? "preset-btn-active" : "preset-btn"}
+        className={`w-full text-left px-3 py-2.5 rounded-lg transition-all duration-200 ${
+          isSelected
+            ? "bg-gray-900 text-white border-2 border-gray-900 shadow-md"
+            : "bg-white text-gray-700 border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 active:bg-gray-100"
+        }`}
         onClick={handleSelect}
+        onKeyDown={handleKeyDown}
+        aria-label={`Select preset ${preset.name ?? "Unnamed"}`}
+        aria-pressed={isSelected}
+        tabIndex={0}
       >
-        <div style={{ fontWeight: 600 }}>{preset.name ?? "Unnamed"}</div>
-        <div className="subtle-small">
+        <div className="font-semibold text-sm">{preset.name ?? "Unnamed"}</div>
+        <div className="text-xs mt-0.5 opacity-75">
           x:{preset.x} y:{preset.y} w:{preset.width} h:{preset.height}
         </div>
       </button>
-      <button className="icon-btn" onClick={handleDelete} title="Delete preset">
+      <button 
+        className="h-[42px] w-10 bg-white text-gray-600 border-2 border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-300 hover:text-red-600 active:bg-red-100 transition-all duration-200 font-bold text-lg flex items-center justify-center shadow-sm hover:shadow-md" 
+        onClick={handleDelete} 
+        title="Delete preset"
+        aria-label={`Delete preset ${preset.name ?? "Unnamed"}`}
+      >
         ✕
       </button>
     </div>
