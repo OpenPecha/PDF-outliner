@@ -3,9 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "http://buddhist.tools/PDF-outliner",
+  "homepage": "http://buddhist.tools",
   "scripts": {
-"predeploy": "echo 'buddhist.tools/PDF-outliner' > dist/CNAME",
+"predeploy": "echo 'buddhist.tools' > dist/CNAME",
 "deploy": "gh-pages -d dist",
     "dev": "vite",
     "build": "vite build",
