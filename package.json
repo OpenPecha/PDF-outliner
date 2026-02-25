@@ -5,7 +5,7 @@
   "type": "module",
   "homepage": "http://buddhist.tools",
   "scripts": {
-"deploy": "gh-pages -d dist",
+    "deploy": "gh-pages -d dist",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
+    "lucide-react": "^0.575.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.624",
     "react": "^19.2.0",

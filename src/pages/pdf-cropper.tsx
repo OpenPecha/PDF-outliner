@@ -9,7 +9,8 @@ import PageCropper from "../components/PageCropper"
  
 
 // pdf.js worker config
-;(pdfjsLib as any).GlobalWorkerOptions.workerSrc =
+;import { Download, ListRestart } from "lucide-react"
+(pdfjsLib as any).GlobalWorkerOptions.workerSrc =
   (pdfjsLib as any).GlobalWorkerOptions.workerSrc ??
   new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString()
 
@@ -166,7 +167,7 @@ export default function PdfCropperPage() {
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3">
                 <div className="flex flex-col gap-3">
                   <button 
-                    className="w-full px-4 py-2.5 bg-gray-800 text-white text-base font-semibold rounded-lg shadow-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75 disabled:opacity-50 disabled:cursor-not-allowed transition duration-200" 
+                    className="w-full flex items-center  gap-2 px-4 py-2.5 bg-gray-800 text-white text-base font-semibold rounded-lg shadow-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75 disabled:opacity-50 disabled:cursor-not-allowed transition duration-200" 
                     onClick={handleExportCroppedPdf}
                     disabled={workspace.presets.length === 0 || isExporting}
                     title={workspace.presets.length === 0 ? "Create a crop preset first" : "Export all pages with crop applied"}
@@ -178,16 +179,16 @@ export default function PdfCropperPage() {
                         Exporting…
                       </span>
                     ) : (
-                      "Export Cropped PDF"
+                     <><Download/> "Export Cropped PDF"</>
                     )}
                   </button>
-                  <button 
-                    className="w-full px-4 py-2.5 bg-white text-gray-800 text-base font-semibold rounded-lg shadow-md border border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-opacity-75 transition duration-200" 
+                  {/* <button 
+                    className="w-full flex items-center  gap-2 px-4 py-2.5 bg-white text-gray-800 text-base font-semibold rounded-lg shadow-md border border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-opacity-75 transition duration-200" 
                     onClick={handleReset}
                     aria-label="Reset workspace"
                   >
-                    Back
-                  </button>
+                    <><ListRestart/> Restart</>
+                  </button> */}
                   <Uploader disabled={isLoadingPdf} onUpload={handleUploadPdf} label="Upload New PDF" />
                 </div>
               </div>

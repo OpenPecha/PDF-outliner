@@ -1,3 +1,4 @@
+import { ListRestart } from "lucide-react"
 import { memo, useCallback, useRef } from "react"
 
 interface UploaderProps {
@@ -32,9 +33,9 @@ const Uploader = memo(function Uploader({
         aria-label={label}
       />
       <span
-        className="inline-block w-full text-center px-4 py-2 bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300 hover:bg-gray-50 active:bg-gray-100 transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:shadow-sm"
+        className="flex items-center  gap-2 w-full text-center px-4 py-2 bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300 hover:bg-gray-50 active:bg-gray-100 transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:shadow-sm"
       >
-        {label}
+       <ListRestart/> {label}
       </span>
     </label>
   )
