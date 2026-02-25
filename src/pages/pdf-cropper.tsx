@@ -187,7 +187,7 @@ export default function PdfCropperPage() {
                     onClick={handleReset}
                     aria-label="Reset workspace"
                   >
-                    <><ListRestart/> Restart</>
+                    <><ListRestart/> Back to Home</>
                   </button> */}
                   <Uploader disabled={isLoadingPdf} onUpload={handleUploadPdf} label="Upload New PDF" />
                 </div>
