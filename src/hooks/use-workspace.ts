@@ -109,25 +109,24 @@ export function useWorkspace(): UseWorkspaceReturn {
   const availablePages = useMemo(() => {
     const n = workspace.totalPages ?? 0
     if (n === 0) return []
-    
-    // Create array of all page numbers
+
+    // Always include page 1
     const allPages = Array.from({ length: n }, (_, i) => i + 1)
-    
-    // If total pages is less than or equal to MAX_RENDER_PAGES, return all pages
     if (n <= MAX_RENDER_PAGES) return allPages
-    
-    // Randomly pick MAX_RENDER_PAGES pages
-    const selected: number[] = []
-    const available = [...allPages]
-    
-    for (let i = 0; i < MAX_RENDER_PAGES; i++) {
+
+    // Randomly pick (MAX_RENDER_PAGES - 1) pages from pages 2 to n
+    const available = allPages.slice(1) // pages 2 to n
+    const selected: number[] = [1] // Always start with 1
+
+    for (let i = 0; i < MAX_RENDER_PAGES - 1; i++) {
+      if (available.length === 0) break
       const randomIndex = Math.floor(Math.random() * available.length)
       selected.push(available[randomIndex])
       available.splice(randomIndex, 1)
     }
-    
-    // Sort the selected pages for better UX
-    return selected.sort((a, b) => a - b)
+
+    // Page 1 goes first, rest are in ascending order
+    return [1, ...selected.slice(1).sort((a, b) => a - b)]
   }, [workspace.totalPages])
 
   const uploadPdf = useCallback(async (file: File) => {

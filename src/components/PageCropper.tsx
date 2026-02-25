@@ -455,7 +455,7 @@ const CanvasArea = memo(function CanvasArea({
   onMouseLeave,
 }: CanvasAreaProps) {
   return (
-    <div className="relative border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm max-h-[80vh] flex-1">
+    <div className="relative border border-gray-200 rounded-xl overflow-hidden bg-black/50 shadow-sm max-h-[80vh] flex-1">
       <div
         ref={containerRef}
         className="absolute z-10"
@@ -611,7 +611,7 @@ const PresetSidebar = memo(function PresetSidebar({
         {presets.length === 0 ? (
           <div className="text-sm text-gray-500 py-1">No presets yet. Draw a rectangle on the page.</div>
         ) : (
-          <div className="grid gap-1.5">
+          <>
             {presets.map(p => (
               <PresetItem
                 key={p.id}
@@ -621,7 +621,7 @@ const PresetSidebar = memo(function PresetSidebar({
                 onDelete={onDeletePreset}
               />
             ))}
-          </div>
+          </>
         )}
       </div>
 
@@ -663,11 +663,11 @@ const PresetItem = memo(function PresetItem({
   }, [preset.id, onSelect])
 
   return (
-    <div className="grid grid-cols-[1fr_40px] gap-2 items-start">
+    <div className="flex justify-between">
       <button
-        className={`w-full text-left px-3 py-2.5 rounded-lg transition-all duration-200 ${
+        className={`w-max cursor-pointer text-left px-3 py-2.5 rounded-lg transition-all duration-200 ${
           isSelected
-            ? "bg-gray-900 text-white border-2 border-gray-900 shadow-md"
+            ? " shadow-md"
             : "bg-white text-gray-700 border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 active:bg-gray-100"
         }`}
         onClick={handleSelect}
@@ -676,10 +676,16 @@ const PresetItem = memo(function PresetItem({
         aria-pressed={isSelected}
         tabIndex={0}
       >
-        <div className="font-semibold text-sm">{preset.name ?? "Unnamed"}</div>
-        <div className="text-xs mt-0.5 opacity-75">
-          x:{preset.x} y:{preset.y} w:{preset.width} h:{preset.height}
-        </div>
+        <span className="flex flex-col gap-0.5 text-xs opacity-80 font-mono">
+          <span>
+            <span className="font-semibold text-gray-700">X:</span> {preset.x} &nbsp; 
+            <span className="font-semibold text-gray-700">Y:</span> {preset.y}
+          </span>
+          <span>
+            <span className="font-semibold text-gray-700">W:</span> {preset.width} &nbsp; 
+            <span className="font-semibold text-gray-700">H:</span> {preset.height}
+          </span>
+        </span>
       </button>
       <button 
         className="h-[42px] w-10 bg-white text-gray-600 border-2 border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-300 hover:text-red-600 active:bg-red-100 transition-all duration-200 font-bold text-lg flex items-center justify-center shadow-sm hover:shadow-md" 
