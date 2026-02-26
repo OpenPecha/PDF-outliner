@@ -34,6 +34,21 @@ interface MoveDragState {
   offsetY: number
 }
 
+interface ResizeDragState {
+  presetId: string
+  handle: 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w'
+  startX: number
+  startY: number
+  startPresetX: number
+  startPresetY: number
+  startPresetW: number
+  startPresetH: number
+  currentX: number
+  currentY: number
+  currentW: number
+  currentH: number
+}
+
 interface Size {
   w: number
   h: number
@@ -61,6 +76,7 @@ function PageCropper({
   const [overlayOffset, setOverlayOffset] = useState<Size>({ w: 0, h: 0 })
   const [drag, setDrag] = useState<DragState | null>(null)
   const [moveDrag, setMoveDrag] = useState<MoveDragState | null>(null)
+  const [resizeDrag, setResizeDrag] = useState<ResizeDragState | null>(null)
   const [selectedPresetId, setSelectedPresetId] = useState<string | undefined>(appliedPresetId)
   const [cropPreviewUrl, setCropPreviewUrl] = useState<string | null>(null)
 
@@ -235,16 +251,94 @@ function PageCropper({
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (isRendering) return
-    if (moveDrag) return // Don't start creating if we're already moving a preset
+    if (moveDrag || resizeDrag) return // Don't start creating if we're already moving/resizing a preset
     
     // Check if clicking on a selected preset overlay (handled by PresetOverlay)
     // This handler is for creating new presets on empty canvas
     if (presets.length >= MAX_PRESETS_PER_PDF) return
     const { x, y } = getRelativePos(e)
     setDrag({ startX: x, startY: y, x, y, w: 0, h: 0 })
-  }, [isRendering, presets.length, moveDrag, getRelativePos])
+  }, [isRendering, presets.length, moveDrag, resizeDrag, getRelativePos])
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (resizeDrag) {
+      // Handle resizing a preset
+      const { x, y } = getRelativePos(e)
+      const deltaX = x - resizeDrag.startX
+      const deltaY = y - resizeDrag.startY
+
+      let newX = resizeDrag.startPresetX
+      let newY = resizeDrag.startPresetY
+      let newW = resizeDrag.startPresetW
+      let newH = resizeDrag.startPresetH
+
+      // Handle different resize handles
+      switch (resizeDrag.handle) {
+        case 'nw': // Top-left
+          newX = clamp(resizeDrag.startPresetX + deltaX, 0, resizeDrag.startPresetX + resizeDrag.startPresetW - 0.01)
+          newY = clamp(resizeDrag.startPresetY + deltaY, 0, resizeDrag.startPresetY + resizeDrag.startPresetH - 0.01)
+          newW = resizeDrag.startPresetX + resizeDrag.startPresetW - newX
+          newH = resizeDrag.startPresetY + resizeDrag.startPresetH - newY
+          break
+        case 'ne': // Top-right
+          newY = clamp(resizeDrag.startPresetY + deltaY, 0, resizeDrag.startPresetY + resizeDrag.startPresetH - 0.01)
+          newW = clamp(resizeDrag.startPresetW + deltaX, 0.01, 1 - resizeDrag.startPresetX)
+          newH = resizeDrag.startPresetY + resizeDrag.startPresetH - newY
+          break
+        case 'sw': // Bottom-left
+          newX = clamp(resizeDrag.startPresetX + deltaX, 0, resizeDrag.startPresetX + resizeDrag.startPresetW - 0.01)
+          newW = resizeDrag.startPresetX + resizeDrag.startPresetW - newX
+          newH = clamp(resizeDrag.startPresetH + deltaY, 0.01, 1 - resizeDrag.startPresetY)
+          break
+        case 'se': // Bottom-right
+          newW = clamp(resizeDrag.startPresetW + deltaX, 0.01, 1 - resizeDrag.startPresetX)
+          newH = clamp(resizeDrag.startPresetH + deltaY, 0.01, 1 - resizeDrag.startPresetY)
+          break
+        case 'n': // Top edge
+          newY = clamp(resizeDrag.startPresetY + deltaY, 0, resizeDrag.startPresetY + resizeDrag.startPresetH - 0.01)
+          newH = resizeDrag.startPresetY + resizeDrag.startPresetH - newY
+          break
+        case 's': // Bottom edge
+          newH = clamp(resizeDrag.startPresetH + deltaY, 0.01, 1 - resizeDrag.startPresetY)
+          break
+        case 'e': // Right edge
+          newW = clamp(resizeDrag.startPresetW + deltaX, 0.01, 1 - resizeDrag.startPresetX)
+          break
+        case 'w': // Left edge
+          newX = clamp(resizeDrag.startPresetX + deltaX, 0, resizeDrag.startPresetX + resizeDrag.startPresetW - 0.01)
+          newW = resizeDrag.startPresetX + resizeDrag.startPresetW - newX
+          break
+      }
+
+      // Ensure minimum size
+      const minSize = 0.01
+      if (newW < minSize) {
+        if (resizeDrag.handle === 'nw' || resizeDrag.handle === 'w') {
+          newX = resizeDrag.startPresetX + resizeDrag.startPresetW - minSize
+        }
+        newW = minSize
+      }
+      if (newH < minSize) {
+        if (resizeDrag.handle === 'nw' || resizeDrag.handle === 'n') {
+          newY = resizeDrag.startPresetY + resizeDrag.startPresetH - minSize
+        }
+        newH = minSize
+      }
+
+      // Ensure within bounds
+      newX = clamp(newX, 0, 1 - newW)
+      newY = clamp(newY, 0, 1 - newH)
+
+      setResizeDrag(prev => prev ? { 
+        ...prev, 
+        currentX: newX, 
+        currentY: newY, 
+        currentW: newW, 
+        currentH: newH 
+      } : null)
+      return
+    }
+
     if (moveDrag) {
       // Handle moving a preset
       const { x, y } = getRelativePos(e)
@@ -274,9 +368,32 @@ function PageCropper({
       const h = Math.abs(y - prev.startY)
       return { ...prev, x: left, y: top, w, h }
     })
-  }, [drag, moveDrag, presets, getRelativePos])
+  }, [drag, moveDrag, resizeDrag, presets, getRelativePos])
 
   const handleMouseUp = useCallback(() => {
+    if (resizeDrag) {
+      // Handle finishing resizing a preset
+      const preset = presets.find(p => p.id === resizeDrag.presetId)
+      if (!preset) {
+        setResizeDrag(null)
+        return
+      }
+
+      // Use the current dimensions from resizeDrag state
+      const { currentX, currentY, currentW, currentH } = resizeDrag
+
+      // Only update if changed
+      if (currentX !== preset.x || currentY !== preset.y || currentW !== preset.width || currentH !== preset.height) {
+        onUpdatePreset(resizeDrag.presetId, { x: currentX, y: currentY, width: currentW, height: currentH }).catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : "Failed to update preset"
+          alert(message)
+        })
+      }
+
+      setResizeDrag(null)
+      return
+    }
+
     if (moveDrag) {
       // Handle finishing moving a preset
       const preset = presets.find(p => p.id === moveDrag.presetId)
@@ -327,11 +444,12 @@ function PageCropper({
     }
 
     setDrag(null)
-  }, [drag, moveDrag, presets, imgSize, onCreatePreset, onUpdatePreset])
+  }, [drag, moveDrag, resizeDrag, presets, imgSize, onCreatePreset, onUpdatePreset, getRelativePos])
 
   const handleMouseLeave = useCallback(() => {
     setDrag(null)
     setMoveDrag(null)
+    setResizeDrag(null)
   }, [])
 
   const handlePresetDragStart = useCallback((presetId: string, e: React.MouseEvent) => {
@@ -351,6 +469,31 @@ function PageCropper({
       startY: preset.y,
       offsetX,
       offsetY,
+    })
+  }, [isRendering, presets, getRelativePos])
+
+  const handlePresetResizeStart = useCallback((presetId: string, handle: ResizeDragState['handle'], e: React.MouseEvent) => {
+    if (isRendering) return
+    e.stopPropagation()
+    const preset = presets.find(p => p.id === presetId)
+    if (!preset) return
+
+    const { x, y } = getRelativePos(e)
+
+    setSelectedPresetId(presetId)
+    setResizeDrag({
+      presetId,
+      handle,
+      startX: x,
+      startY: y,
+      startPresetX: preset.x,
+      startPresetY: preset.y,
+      startPresetW: preset.width,
+      startPresetH: preset.height,
+      currentX: preset.x,
+      currentY: preset.y,
+      currentW: preset.width,
+      currentH: preset.height,
     })
   }, [isRendering, presets, getRelativePos])
 
@@ -374,9 +517,11 @@ function PageCropper({
           appliedPresetId={appliedPresetId}
           drag={drag}
           moveDrag={moveDrag}
+          resizeDrag={resizeDrag}
           canCreatePreset={canCreatePreset}
           onSelectPreset={setSelectedPresetId}
           onPresetDragStart={handlePresetDragStart}
+          onPresetResizeStart={handlePresetResizeStart}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -431,9 +576,11 @@ interface CanvasAreaProps {
   appliedPresetId?: string
   drag: DragState | null
   moveDrag: MoveDragState | null
+  resizeDrag: ResizeDragState | null
   canCreatePreset: boolean
   onSelectPreset: (id: string) => void
   onPresetDragStart: (presetId: string, e: React.MouseEvent) => void
+  onPresetResizeStart: (presetId: string, handle: ResizeDragState['handle'], e: React.MouseEvent) => void
   onMouseDown: (e: React.MouseEvent) => void
   onMouseMove: (e: React.MouseEvent) => void
   onMouseUp: () => void
@@ -451,9 +598,11 @@ const CanvasArea = memo(function CanvasArea({
   appliedPresetId,
   drag,
   moveDrag,
+  resizeDrag,
   canCreatePreset,
   onSelectPreset,
   onPresetDragStart,
+  onPresetResizeStart,
   onMouseDown,
   onMouseMove,
   onMouseUp,
@@ -478,11 +627,24 @@ const CanvasArea = memo(function CanvasArea({
       >
         {presets.map(p => {
           const isMoving = moveDrag?.presetId === p.id
-          const displayPreset = isMoving && moveDrag ? {
-            ...p,
-            x: moveDrag.startX,
-            y: moveDrag.startY,
-          } : p
+          const isResizing = resizeDrag?.presetId === p.id
+          
+          let displayPreset = p
+          if (isMoving && moveDrag) {
+            displayPreset = {
+              ...p,
+              x: moveDrag.startX,
+              y: moveDrag.startY,
+            }
+          } else if (isResizing && resizeDrag) {
+            displayPreset = {
+              ...p,
+              x: resizeDrag.currentX,
+              y: resizeDrag.currentY,
+              width: resizeDrag.currentW,
+              height: resizeDrag.currentH,
+            }
+          }
 
           return (
             <PresetOverlay
@@ -493,6 +655,7 @@ const CanvasArea = memo(function CanvasArea({
               displaySize={displaySize}
               onSelect={onSelectPreset}
               onDragStart={onPresetDragStart}
+              onResizeStart={onPresetResizeStart}
             />
           )
         })}
@@ -531,6 +694,7 @@ interface PresetOverlayProps {
   displaySize: Size
   onSelect: (id: string) => void
   onDragStart: (presetId: string, e: React.MouseEvent) => void
+  onResizeStart: (presetId: string, handle: ResizeDragState['handle'], e: React.MouseEvent) => void
 }
 
 const PresetOverlay = memo(function PresetOverlay({
@@ -540,6 +704,7 @@ const PresetOverlay = memo(function PresetOverlay({
   displaySize,
   onSelect,
   onDragStart,
+  onResizeStart,
 }: PresetOverlayProps) {
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -551,6 +716,11 @@ const PresetOverlay = memo(function PresetOverlay({
       onSelect(preset.id)
     }
   }, [preset.id, isSelected, onSelect, onDragStart])
+
+  const handleResizeMouseDown = useCallback((handle: ResizeDragState['handle'], e: React.MouseEvent) => {
+    e.stopPropagation()
+    onResizeStart(preset.id, handle, e)
+  }, [preset.id, onResizeStart])
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -568,12 +738,15 @@ const PresetOverlay = memo(function PresetOverlay({
     }
   }, [preset.id, onSelect])
 
+  const handleSize = 8
+  const handleOffset = -handleSize / 2
+
   return (
     <div
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      title={`${preset.name ?? preset.id} (${(preset.x * 100).toFixed(1)}%, ${(preset.y * 100).toFixed(1)}%, ${(preset.width * 100).toFixed(1)}%, ${(preset.height * 100).toFixed(1)}%)${isSelected ? " - Drag to move" : ""}`}
+      title={`${preset.name ?? preset.id} (${(preset.x * 100).toFixed(1)}%, ${(preset.y * 100).toFixed(1)}%, ${(preset.width * 100).toFixed(1)}%, ${(preset.height * 100).toFixed(1)}%)${isSelected ? " - Drag to move, drag corners to resize" : ""}`}
       className={`absolute transition-all duration-200 ${
         isSelected 
           ? "border-2 border-gray-900 bg-gray-900/10 shadow-lg cursor-move" 
@@ -585,10 +758,68 @@ const PresetOverlay = memo(function PresetOverlay({
         width: preset.width * displaySize.w,
         height: preset.height * displaySize.h,
       }}
-      aria-label={`Crop preset ${preset.name ?? preset.id}${isSelected ? " - Drag to move" : ""}`}
+      aria-label={`Crop preset ${preset.name ?? preset.id}${isSelected ? " - Drag to move, drag corners to resize" : ""}`}
       role="button"
       tabIndex={0}
-    />
+    >
+      {isSelected && (
+        <>
+          {/* Corner handles */}
+          <button
+            type="button"
+            className="absolute bg-gray-900 border-2 border-white rounded-sm cursor-nwse-resize z-10 p-0"
+            style={{
+              left: handleOffset,
+              top: handleOffset,
+              width: handleSize,
+              height: handleSize,
+            }}
+            onMouseDown={(e) => handleResizeMouseDown('nw', e)}
+            title="Resize top-left"
+            aria-label="Resize top-left corner"
+          />
+          <button
+            type="button"
+            className="absolute bg-gray-900 border-2 border-white rounded-sm cursor-nesw-resize z-10 p-0"
+            style={{
+              right: handleOffset,
+              top: handleOffset,
+              width: handleSize,
+              height: handleSize,
+            }}
+            onMouseDown={(e) => handleResizeMouseDown('ne', e)}
+            title="Resize top-right"
+            aria-label="Resize top-right corner"
+          />
+          <button
+            type="button"
+            className="absolute bg-gray-900 border-2 border-white rounded-sm cursor-nesw-resize z-10 p-0"
+            style={{
+              left: handleOffset,
+              bottom: handleOffset,
+              width: handleSize,
+              height: handleSize,
+            }}
+            onMouseDown={(e) => handleResizeMouseDown('sw', e)}
+            title="Resize bottom-left"
+            aria-label="Resize bottom-left corner"
+          />
+          <button
+            type="button"
+            className="absolute bg-gray-900 border-2 border-white rounded-sm cursor-nwse-resize z-10 p-0"
+            style={{
+              right: handleOffset,
+              bottom: handleOffset,
+              width: handleSize,
+              height: handleSize,
+            }}
+            onMouseDown={(e) => handleResizeMouseDown('se', e)}
+            title="Resize bottom-right"
+            aria-label="Resize bottom-right corner"
+          />
+        </>
+      )}
+    </div>
   )
 })
 
