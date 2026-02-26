@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react"
+import { useState, useEffect, useRef, useCallback, memo } from "react"
 import * as pdfjsLib from "pdfjs-dist"
 import { clamp, renderPdfPageToCanvas, cropCanvasToDataUrl, dataUrlToUint8Array, uid } from "../utils/lib"
 import type { CropPreset } from "../types"
@@ -203,10 +203,11 @@ function PageCropper({
     }
 
     const src = canvasRef.current
-    const x = clamp(preset.x, 0, src.width - 1)
-    const y = clamp(preset.y, 0, src.height - 1)
-    const w = clamp(preset.width, 1, src.width - x)
-    const h = clamp(preset.height, 1, src.height - y)
+    // Convert ratios to pixels
+    const x = clamp(preset.x * src.width, 0, src.width - 1)
+    const y = clamp(preset.y * src.height, 0, src.height - 1)
+    const w = clamp(preset.width * src.width, 1, src.width - x)
+    const h = clamp(preset.height * src.height, 1, src.height - y)
 
     const url = cropCanvasToDataUrl(src, { x, y, width: w, height: h })
     setCropPreviewUrl(url)
@@ -222,9 +223,13 @@ function PageCropper({
     const displayX = e.clientX - rect.left
     const displayY = e.clientY - rect.top
 
+    // Return ratios (0-1) instead of pixels
+    const pixelX = clamp(displayX * scaleX, 0, imgSize.w)
+    const pixelY = clamp(displayY * scaleY, 0, imgSize.h)
+    
     return {
-      x: clamp(displayX * scaleX, 0, imgSize.w),
-      y: clamp(displayY * scaleY, 0, imgSize.h),
+      x: pixelX / imgSize.w,
+      y: pixelY / imgSize.h,
     }
   }, [imgSize, displaySize])
 
@@ -249,9 +254,10 @@ function PageCropper({
         return
       }
 
-      // Calculate new position
-      const newX = clamp(x - moveDrag.offsetX, 0, imgSize.w - preset.width)
-      const newY = clamp(y - moveDrag.offsetY, 0, imgSize.h - preset.height)
+      // Calculate new position in ratios
+      // moveDrag.offsetX and offsetY are in ratios, so we can subtract directly
+      const newX = clamp(x - moveDrag.offsetX, 0, 1 - preset.width)
+      const newY = clamp(y - moveDrag.offsetY, 0, 1 - preset.height)
 
       setMoveDrag(prev => prev ? { ...prev, startX: newX, startY: newY } : null)
       return
@@ -268,18 +274,19 @@ function PageCropper({
       const h = Math.abs(y - prev.startY)
       return { ...prev, x: left, y: top, w, h }
     })
-  }, [drag, moveDrag, presets, imgSize, getRelativePos])
+  }, [drag, moveDrag, presets, getRelativePos])
 
   const handleMouseUp = useCallback(() => {
     if (moveDrag) {
       // Handle finishing moving a preset
       const preset = presets.find(p => p.id === moveDrag.presetId)
       if (preset) {
-        const newX = clamp(moveDrag.startX, 0, imgSize.w - preset.width)
-        const newY = clamp(moveDrag.startY, 0, imgSize.h - preset.height)
+        // moveDrag coordinates are already in ratios
+        const newX = clamp(moveDrag.startX, 0, 1 - preset.width)
+        const newY = clamp(moveDrag.startY, 0, 1 - preset.height)
         
         if (newX !== preset.x || newY !== preset.y) {
-          onUpdatePreset(moveDrag.presetId, { x: Math.round(newX), y: Math.round(newY) }).catch((error: unknown) => {
+          onUpdatePreset(moveDrag.presetId, { x: newX, y: newY }).catch((error: unknown) => {
             const message = error instanceof Error ? error.message : "Failed to update preset"
             alert(message)
           })
@@ -291,7 +298,11 @@ function PageCropper({
 
     if (!drag) return
 
-    if (drag.w >= MIN_DRAG_SIZE && drag.h >= MIN_DRAG_SIZE) {
+    // Convert MIN_DRAG_SIZE from pixels to ratio
+    const minDragRatioX = MIN_DRAG_SIZE / imgSize.w
+    const minDragRatioY = MIN_DRAG_SIZE / imgSize.h
+
+    if (drag.w >= minDragRatioX && drag.h >= minDragRatioY) {
       // Check limit before creating
       if (presets.length >= MAX_PRESETS_PER_PDF) {
         alert(`Maximum ${MAX_PRESETS_PER_PDF} preset${MAX_PRESETS_PER_PDF > 1 ? 's' : ''} per PDF allowed. Please delete the existing preset first.`)
@@ -299,13 +310,14 @@ function PageCropper({
         return
       }
 
+      // Store coordinates as ratios (0-1)
       const preset: CropPreset = {
         id: uid(),
         name: presets.length === 0 ? "Preset 1" : `Preset ${presets.length + 1}`,
-        x: Math.round(drag.x),
-        y: Math.round(drag.y),
-        width: Math.round(drag.w),
-        height: Math.round(drag.h),
+        x: drag.x,
+        y: drag.y,
+        width: drag.w,
+        height: drag.h,
       }
       onCreatePreset(preset).catch((error: unknown) => {
         const message = error instanceof Error ? error.message : "Failed to create preset"
@@ -328,6 +340,7 @@ function PageCropper({
     if (!preset) return
 
     const { x, y } = getRelativePos(e)
+    // Both x, y and preset.x, preset.y are now in ratios
     const offsetX = x - preset.x
     const offsetY = y - preset.y
 
@@ -340,11 +353,6 @@ function PageCropper({
       offsetY,
     })
   }, [isRendering, presets, getRelativePos])
-
-  const scaleFactors = useMemo(() => ({
-    x: displaySize.w > 0 ? displaySize.w / imgSize.w : 1,
-    y: displaySize.h > 0 ? displaySize.h / imgSize.h : 1,
-  }), [displaySize, imgSize])
 
   const canCreatePreset = presets.length < MAX_PRESETS_PER_PDF
 
@@ -366,7 +374,6 @@ function PageCropper({
           appliedPresetId={appliedPresetId}
           drag={drag}
           moveDrag={moveDrag}
-          scaleFactors={scaleFactors}
           canCreatePreset={canCreatePreset}
           onSelectPreset={setSelectedPresetId}
           onPresetDragStart={handlePresetDragStart}
@@ -424,7 +431,6 @@ interface CanvasAreaProps {
   appliedPresetId?: string
   drag: DragState | null
   moveDrag: MoveDragState | null
-  scaleFactors: { x: number; y: number }
   canCreatePreset: boolean
   onSelectPreset: (id: string) => void
   onPresetDragStart: (presetId: string, e: React.MouseEvent) => void
@@ -445,7 +451,6 @@ const CanvasArea = memo(function CanvasArea({
   appliedPresetId,
   drag,
   moveDrag,
-  scaleFactors,
   canCreatePreset,
   onSelectPreset,
   onPresetDragStart,
@@ -485,7 +490,7 @@ const CanvasArea = memo(function CanvasArea({
               preset={displayPreset}
               isSelected={p.id === selectedPresetId}
               isApplied={p.id === appliedPresetId}
-              scaleFactors={scaleFactors}
+              displaySize={displaySize}
               onSelect={onSelectPreset}
               onDragStart={onPresetDragStart}
             />
@@ -496,10 +501,10 @@ const CanvasArea = memo(function CanvasArea({
           <div
             className="absolute border-2 border-dashed border-gray-900 bg-black/5 pointer-events-none"
             style={{
-              left: drag.x * scaleFactors.x,
-              top: drag.y * scaleFactors.y,
-              width: drag.w * scaleFactors.x,
-              height: drag.h * scaleFactors.y,
+              left: drag.x * displaySize.w,
+              top: drag.y * displaySize.h,
+              width: drag.w * displaySize.w,
+              height: drag.h * displaySize.h,
             }}
           />
         )}
@@ -523,7 +528,7 @@ interface PresetOverlayProps {
   preset: CropPreset
   isSelected: boolean
   isApplied: boolean
-  scaleFactors: { x: number; y: number }
+  displaySize: Size
   onSelect: (id: string) => void
   onDragStart: (presetId: string, e: React.MouseEvent) => void
 }
@@ -532,7 +537,7 @@ const PresetOverlay = memo(function PresetOverlay({
   preset,
   isSelected,
   isApplied,
-  scaleFactors,
+  displaySize,
   onSelect,
   onDragStart,
 }: PresetOverlayProps) {
@@ -568,17 +573,17 @@ const PresetOverlay = memo(function PresetOverlay({
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      title={`${preset.name ?? preset.id} (${preset.x},${preset.y},${preset.width},${preset.height})${isSelected ? " - Drag to move" : ""}`}
+      title={`${preset.name ?? preset.id} (${(preset.x * 100).toFixed(1)}%, ${(preset.y * 100).toFixed(1)}%, ${(preset.width * 100).toFixed(1)}%, ${(preset.height * 100).toFixed(1)}%)${isSelected ? " - Drag to move" : ""}`}
       className={`absolute transition-all duration-200 ${
         isSelected 
           ? "border-2 border-gray-900 bg-gray-900/10 shadow-lg cursor-move" 
           : "border border-gray-500 bg-black/6 hover:bg-black/8 cursor-pointer"
       } ${isApplied ? "ring-2 ring-inset ring-gray-400" : ""}`}
       style={{
-        left: preset.x * scaleFactors.x,
-        top: preset.y * scaleFactors.y,
-        width: preset.width * scaleFactors.x,
-        height: preset.height * scaleFactors.y,
+        left: preset.x * displaySize.w,
+        top: preset.y * displaySize.h,
+        width: preset.width * displaySize.w,
+        height: preset.height * displaySize.h,
       }}
       aria-label={`Crop preset ${preset.name ?? preset.id}${isSelected ? " - Drag to move" : ""}`}
       role="button"
@@ -678,12 +683,12 @@ const PresetItem = memo(function PresetItem({
       >
         <span className="flex flex-col gap-0.5 text-xs opacity-80 font-mono">
           <span>
-            <span className="font-semibold text-gray-700">X:</span> {preset.x} &nbsp; 
-            <span className="font-semibold text-gray-700">Y:</span> {preset.y}
+            <span className="font-semibold text-gray-700">X:</span> {preset.x.toFixed(2)} &nbsp; 
+            <span className="font-semibold text-gray-700">Y:</span> {preset.y.toFixed(2)}
           </span>
           <span>
-            <span className="font-semibold text-gray-700">W:</span> {preset.width} &nbsp; 
-            <span className="font-semibold text-gray-700">H:</span> {preset.height}
+            <span className="font-semibold text-gray-700">W:</span> {preset.width.toFixed(2)} &nbsp; 
+            <span className="font-semibold text-gray-700">H:</span> {preset.height.toFixed(2)}
           </span>
         </span>
       </button>

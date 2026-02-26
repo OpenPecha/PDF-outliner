@@ -170,48 +170,22 @@ interface CropPresetForExport {
 }
 
 /**
- * Calculate the scale factor between rendered canvas and original PDF page.
- * This is needed to convert crop coordinates from canvas space to PDF space.
- */
-async function getCanvasToPdfScale(
-  pdfBytes: Uint8Array,
-  pageNumber: number,
-  canvasWidth: number
-): Promise<{ scaleX: number; scaleY: number; pdfWidth: number; pdfHeight: number }> {
-  const pdf = await (pdfjsLib as any).getDocument({ data: pdfBytes }).promise
-  const page = await pdf.getPage(pageNumber)
-  const viewport = page.getViewport({ scale: 1 })
-  
-  // The canvas was rendered at a fixed width (e.g., 900px)
-  const renderScale = canvasWidth / viewport.width
-  const renderedHeight = viewport.height * renderScale
-
-  return {
-    scaleX: viewport.width / canvasWidth,
-    scaleY: viewport.height / renderedHeight,
-    pdfWidth: viewport.width,
-    pdfHeight: viewport.height,
-  }
-}
-
-/**
  * Apply crop box to a PDF page.
- * Converts coordinates from canvas pixel space to PDF point space.
+ * Converts coordinates from ratios (0-1) directly to PDF point space.
  */
 function applyCropToPage(
   page: PDFPage,
-  preset: CropPresetForExport,
-  scaleX: number,
-  scaleY: number
+  preset: CropPresetForExport
 ) {
   const { width: pageWidth, height: pageHeight } = page.getSize()
   
-  // Convert from canvas coordinates to PDF coordinates
+  // Convert from ratios (0-1) to PDF coordinates
   // Canvas origin is top-left, PDF origin is bottom-left
-  const pdfX = preset.x * scaleX
-  const pdfY = pageHeight - (preset.y * scaleY) - (preset.height * scaleY)
-  const pdfWidth = preset.width * scaleX
-  const pdfHeight = preset.height * scaleY
+  // preset.x, preset.y, preset.width, preset.height are all ratios (0-1)
+  const pdfX = preset.x * pageWidth
+  const pdfY = pageHeight - (preset.y * pageHeight) - (preset.height * pageHeight)
+  const pdfWidth = preset.width * pageWidth
+  const pdfHeight = preset.height * pageHeight
 
   // Clamp values to page bounds
   const clampedX = clamp(pdfX, 0, pageWidth)
@@ -229,25 +203,23 @@ interface CropExportResult {
 
 /**
  * Export a cropped PDF using the given preset applied to all pages.
- * The preset coordinates are in canvas pixel space (from the rendered preview).
+ * The preset coordinates are in ratios (0-1), where:
+ * - x, y are the top-left corner position as ratios of page width/height
+ * - width, height are the crop dimensions as ratios of page width/height
  */
 export async function exportCroppedPdf(
   originalPdfDataUrl: string,
   preset: CropPresetForExport,
-  originalFilename: string,
-  canvasRenderWidth = 900
+  originalFilename: string
 ): Promise<CropExportResult> {
   const pdfBytes = dataUrlToUint8Array(originalPdfDataUrl)
   const pdfDoc = await PDFDocument.load(pdfBytes)
   const pages = pdfDoc.getPages()
   const totalPages = pages.length
 
-  // Get scale factor from first page (assuming all pages have similar dimensions)
-  const { scaleX, scaleY } = await getCanvasToPdfScale(pdfBytes, 1, canvasRenderWidth)
-
-  // Apply crop to all pages
+  // Apply crop to all pages (preset coordinates are already in ratios)
   for (let i = 0; i < totalPages; i++) {
-    applyCropToPage(pages[i], preset, scaleX, scaleY)
+    applyCropToPage(pages[i], preset)
   }
 
   const croppedPdfBytes = await pdfDoc.save()
