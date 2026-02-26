@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import * as pdfjsLib from "pdfjs-dist"
 import "pdfjs-dist/build/pdf.worker.mjs"
 import { exportCroppedPdf, downloadPdfBytes } from "../utils/lib"
@@ -9,7 +9,7 @@ import PageCropper from "../components/PageCropper"
  
 
 // pdf.js worker config
-;import { Download, ListRestart } from "lucide-react"
+import { Download } from "lucide-react"
 (pdfjsLib as any).GlobalWorkerOptions.workerSrc =
   (pdfjsLib as any).GlobalWorkerOptions.workerSrc ??
   new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString()
@@ -48,6 +48,20 @@ export default function PdfCropperPage() {
   const { currentPage, navigateToPage } = usePageNavigation(availablePages)
   const [isLoadingPdf, setIsLoadingPdf] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [exportAllPages, setExportAllPages] = useState(true)
+  const [startPage, setStartPage] = useState(1)
+  const [endPage, setEndPage] = useState(1)
+
+  // Update endPage when totalPages changes
+  const totalPages = workspace.totalPages ?? 0
+  useEffect(() => {
+    if (totalPages > 0) {
+      setEndPage(totalPages)
+      if (startPage > totalPages) {
+        setStartPage(1)
+      }
+    }
+  }, [totalPages, startPage])
 
   const handleUploadPdf = useCallback(
     async (file: File) => {
@@ -94,6 +108,28 @@ export default function PdfCropperPage() {
       return
     }
 
+    // Validate page range if not exporting all pages
+    const pdfTotalPages = workspace.totalPages ?? 0
+    if (!exportAllPages) {
+      if (pdfTotalPages === 0) {
+        alert("PDF not loaded. Please upload a PDF first.")
+        return
+      }
+      
+      const start = Math.max(1, Math.min(startPage, pdfTotalPages))
+      const end = Math.max(start, Math.min(endPage, pdfTotalPages))
+      
+      if (start < 1 || end < 1 || start > pdfTotalPages || end > pdfTotalPages) {
+        alert(`Please enter valid page numbers between 1 and ${pdfTotalPages}.`)
+        return
+      }
+      
+      if (start > end) {
+        alert("Start page must be less than or equal to end page.")
+        return
+      }
+    }
+
     setIsExporting(true)
     try {
       // Convert blob to data URL for export function
@@ -104,10 +140,19 @@ export default function PdfCropperPage() {
         reader.readAsDataURL(pdfBlob)
       })
 
+      let pageRange: { startPage: number; endPage: number } | undefined
+      if (!exportAllPages && pdfTotalPages > 0) {
+        pageRange = { 
+          startPage: Math.max(1, Math.min(startPage, pdfTotalPages)), 
+          endPage: Math.max(1, Math.min(endPage, pdfTotalPages)) 
+        }
+      }
+
       const { pdfBytes, filename } = await exportCroppedPdf(
         dataUrl,
         presetToUse,
-        workspace.pdfName ?? "document.pdf"
+        workspace.pdfName ?? "document.pdf",
+        pageRange
       )
       downloadPdfBytes(pdfBytes, filename)
     } catch (error) {
@@ -116,7 +161,7 @@ export default function PdfCropperPage() {
     } finally {
       setIsExporting(false)
     }
-  }, [workspace, getPdfBlobForExport])
+  }, [workspace, getPdfBlobForExport, exportAllPages, startPage, endPage])
 
   // Early return for empty state
   if (workspaceLoading) {
@@ -166,11 +211,81 @@ export default function PdfCropperPage() {
             <div className="space-y-6 sticky top-8">
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3">
                 <div className="flex flex-col gap-3">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="export-all-pages"
+                        checked={exportAllPages}
+                        onChange={(e) => {
+                          setExportAllPages(e.target.checked)
+                          if (e.target.checked && totalPages > 0) {
+                            setStartPage(1)
+                            setEndPage(totalPages)
+                          }
+                        }}
+                        className="w-4 h-4 text-gray-800 border-gray-300 rounded focus:ring-gray-500"
+                      />
+                      <label htmlFor="export-all-pages" className="text-sm font-medium text-gray-700 cursor-pointer">
+                        Export all pages
+                      </label>
+                    </div>
+                    
+                    {!exportAllPages && (
+                      <div className="space-y-2 pl-6 border-l-2 border-gray-200">
+                        <div className="flex items-center gap-2">
+                          <label htmlFor="start-page" className="text-sm text-gray-600 whitespace-nowrap">
+                            From page:
+                          </label>
+                          <input
+                            type="number"
+                            id="start-page"
+                            min={1}
+                            max={totalPages}
+                            value={startPage}
+                            onChange={(e) => {
+                              const value = Number.parseInt(e.target.value, 10)
+                              if (!Number.isNaN(value) && value >= 1) {
+                                setStartPage(Math.min(value, totalPages))
+                                if (value > endPage) {
+                                  setEndPage(Math.min(value, totalPages))
+                                }
+                              }
+                            }}
+                            className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-500"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label htmlFor="end-page" className="text-sm text-gray-600 whitespace-nowrap">
+                            To page:
+                          </label>
+                          <input
+                            type="number"
+                            id="end-page"
+                            min={startPage}
+                            max={totalPages}
+                            value={endPage}
+                            onChange={(e) => {
+                              const value = Number.parseInt(e.target.value, 10)
+                              if (!Number.isNaN(value) && value >= startPage) {
+                                setEndPage(Math.min(value, totalPages))
+                              }
+                            }}
+                            className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-gray-500"
+                          />
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          Total pages: {totalPages}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
                   <button 
                     className="w-full flex items-center  gap-2 px-4 py-2.5 bg-gray-800 text-white text-base font-semibold rounded-lg shadow-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75 disabled:opacity-50 disabled:cursor-not-allowed transition duration-200" 
                     onClick={handleExportCroppedPdf}
                     disabled={workspace.presets.length === 0 || isExporting}
-                    title={workspace.presets.length === 0 ? "Create a crop preset first" : "Export all pages with crop applied"}
+                    title={workspace.presets.length === 0 ? "Create a crop preset first" : exportAllPages ? "Export all pages with crop applied" : `Export pages ${startPage}-${endPage} with crop applied`}
                     aria-label={isExporting ? "Exporting PDF" : "Export cropped PDF"}
                   >
                     {isExporting ? (
@@ -179,7 +294,9 @@ export default function PdfCropperPage() {
                         Exporting…
                       </span>
                     ) : (
-                     <><Download/> "Export Cropped PDF"</>
+                      <>
+                        <Download /> Export Cropped PDF
+                      </>
                     )}
                   </button>
                   {/* <button 

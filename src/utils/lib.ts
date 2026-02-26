@@ -202,31 +202,61 @@ interface CropExportResult {
 }
 
 /**
- * Export a cropped PDF using the given preset applied to all pages.
+ * Export a cropped PDF using the given preset applied to specified pages.
  * The preset coordinates are in ratios (0-1), where:
  * - x, y are the top-left corner position as ratios of page width/height
  * - width, height are the crop dimensions as ratios of page width/height
+ * @param pageRange Optional range object with startPage and endPage (1-indexed). If not provided, exports all pages.
  */
 export async function exportCroppedPdf(
   originalPdfDataUrl: string,
   preset: CropPresetForExport,
-  originalFilename: string
+  originalFilename: string,
+  pageRange?: { startPage: number; endPage: number }
 ): Promise<CropExportResult> {
   const pdfBytes = dataUrlToUint8Array(originalPdfDataUrl)
-  const pdfDoc = await PDFDocument.load(pdfBytes)
-  const pages = pdfDoc.getPages()
-  const totalPages = pages.length
+  const sourcePdfDoc = await PDFDocument.load(pdfBytes)
+  const totalPages = sourcePdfDoc.getPageCount()
 
-  // Apply crop to all pages (preset coordinates are already in ratios)
-  for (let i = 0; i < totalPages; i++) {
+  // Determine which pages to export
+  let pagesToExport: number[]
+  if (pageRange) {
+    const startPage = Math.max(1, Math.min(pageRange.startPage, totalPages))
+    const endPage = Math.max(startPage, Math.min(pageRange.endPage, totalPages))
+    pagesToExport = Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i - 1) // Convert to 0-indexed
+  } else {
+    pagesToExport = Array.from({ length: totalPages }, (_, i) => i)
+  }
+
+  // Create new PDF document with selected pages
+  const newPdfDoc = await PDFDocument.create()
+  const copiedPages = await newPdfDoc.copyPages(sourcePdfDoc, pagesToExport)
+  
+  for (const page of copiedPages) {
+    newPdfDoc.addPage(page)
+  }
+
+  // Apply crop to all pages in the new document
+  const pages = newPdfDoc.getPages()
+  for (let i = 0; i < pages.length; i++) {
     applyCropToPage(pages[i], preset)
   }
 
-  const croppedPdfBytes = await pdfDoc.save()
+  const croppedPdfBytes = await newPdfDoc.save()
   
   // Generate filename
   const baseName = originalFilename.replace(/\.pdf$/i, "")
-  const filename = `${baseName}_cropped.pdf`
+  let filename = `${baseName}_cropped.pdf`
+  
+  if (pageRange) {
+    const startPage = Math.max(1, Math.min(pageRange.startPage, totalPages))
+    const endPage = Math.max(startPage, Math.min(pageRange.endPage, totalPages))
+    if (startPage === endPage) {
+      filename = `${baseName}_cropped_page${startPage}.pdf`
+    } else {
+      filename = `${baseName}_cropped_pages${startPage}-${endPage}.pdf`
+    }
+  }
 
   return {
     pdfBytes: croppedPdfBytes,
