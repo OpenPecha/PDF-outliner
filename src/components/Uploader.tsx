@@ -155,7 +155,7 @@ const Uploader = memo(function Uploader({
 
       {/* URL input mode */}
       {mode === "url" && (
-        <div className="space-y-2">
+        <div className="space-y-2 flex flex-col gap-2">
           <div className="flex gap-2">
             <input
               ref={urlInputRef}
@@ -168,13 +168,13 @@ const Uploader = memo(function Uploader({
               onKeyDown={handleUrlKeyDown}
               placeholder="https://example.com/document.pdf"
               disabled={disabled || isLoadingUrl}
-              className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               type="button"
               onClick={handleUrlSubmit}
               disabled={disabled || isLoadingUrl || !url.trim()}
-              className="px-4 py-2 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75 disabled:opacity-50 disabled:cursor-not-allowed transition duration-200 flex items-center gap-2"
+              className="w-min px-4 py-2 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-75 disabled:opacity-50 disabled:cursor-not-allowed transition duration-200 flex items-center gap-2"
             >
               {isLoadingUrl ? (
                 <>
@@ -184,17 +184,18 @@ const Uploader = memo(function Uploader({
               ) : (
                 <>
                   <LinkIcon className="w-4 h-4" />
-                  Load
                 </>
               )}
             </button>
+          
           </div>
+          <p className="text-xs text-gray-500">
+            download and load the PDF
+          </p>
           {urlError && (
             <p className="text-sm text-red-600">{urlError}</p>
           )}
-          <p className="text-xs text-gray-500">
-            Enter a URL that ends with .pdf to download and load the PDF
-          </p>
+
         </div>
       )}
     </div>
