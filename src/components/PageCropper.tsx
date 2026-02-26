@@ -4,6 +4,7 @@ import { clamp, renderPdfPageToCanvas, cropCanvasToDataUrl, dataUrlToUint8Array,
 import type { CropPreset } from "../types"
 import { MAX_PRESETS_PER_PDF } from "../config"
 import "../App.css"
+import { CopyIcon, XIcon } from "lucide-react"
 
 interface PageCropperProps {
   pdfDataUrl: string
@@ -888,6 +889,7 @@ const PresetItem = memo(function PresetItem({
   onSelect,
   onDelete,
 }: PresetItemProps) {
+  const [copied, setCopied] = useState(false)
   const handleSelect = useCallback(() => onSelect(preset.id), [preset.id, onSelect])
   const handleDelete = useCallback(() => onDelete(preset.id), [preset.id, onDelete])
 
@@ -898,39 +900,67 @@ const PresetItem = memo(function PresetItem({
     }
   }, [preset.id, onSelect])
 
+  const handleCopyPreset = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    const pythonString = `[${preset.x.toFixed(2)}, ${preset.y.toFixed(2)}, ${preset.width.toFixed(2)}, ${preset.height.toFixed(2)}]`
+    navigator.clipboard.writeText(pythonString)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }, [preset])
+
   return (
-    <div className="flex justify-between">
-      <button
-        className={`w-max cursor-pointer text-left px-3 py-2.5 rounded-lg transition-all duration-200 ${
-          isSelected
-            ? " shadow-md"
-            : "bg-white text-gray-700 border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 active:bg-gray-100"
-        }`}
-        onClick={handleSelect}
-        onKeyDown={handleKeyDown}
-        aria-label={`Select preset ${preset.name ?? "Unnamed"}`}
-        aria-pressed={isSelected}
-        tabIndex={0}
-      >
-        <span className="flex flex-col gap-0.5 text-xs opacity-80 font-mono">
-          <span>
-            <span className="font-semibold text-gray-700">X:</span> {preset.x.toFixed(2)} &nbsp; 
-            <span className="font-semibold text-gray-700">Y:</span> {preset.y.toFixed(2)}
+    <div className="flex justify-between items-center gap-2">
+      <div className="flex-1 flex items-center gap-2" >
+        <button
+          className={`flex-1 cursor-pointer text-left px-3 py-2.5 rounded-lg transition-all duration-200 ${
+            isSelected
+              ? " shadow-md"
+              : "bg-white text-gray-700 border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 active:bg-gray-100"
+          }`}
+          onClick={handleSelect}
+          onKeyDown={handleKeyDown}
+          aria-label={`Select preset ${preset.name ?? "Unnamed"}`}
+          aria-pressed={isSelected}
+          tabIndex={0}
+        >
+          <span className="flex flex-col gap-0.5 text-xs opacity-80 font-mono">
+            <span>
+              <span className="font-semibold text-gray-700">X:</span> {preset.x.toFixed(2)} &nbsp; 
+              <span className="font-semibold text-gray-700">Y:</span> {preset.y.toFixed(2)}
+            </span>
+            <span>
+              <span className="font-semibold text-gray-700">W:</span> {preset.width.toFixed(2)} &nbsp; 
+              <span className="font-semibold text-gray-700">H:</span> {preset.height.toFixed(2)}
+            </span>
           </span>
-          <span>
-            <span className="font-semibold text-gray-700">W:</span> {preset.width.toFixed(2)} &nbsp; 
-            <span className="font-semibold text-gray-700">H:</span> {preset.height.toFixed(2)}
-          </span>
-        </span>
-      </button>
-      <button 
-        className="h-[42px] w-10 bg-white text-gray-600 border-2 border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-300 hover:text-red-600 active:bg-red-100 transition-all duration-200 font-bold text-lg flex items-center justify-center shadow-sm hover:shadow-md" 
-        onClick={handleDelete} 
-        title="Delete preset"
-        aria-label={`Delete preset ${preset.name ?? "Unnamed"}`}
-      >
-        ✕
-      </button>
+        </button>
+        <div className="flex items-center gap-1 flex-col">
+          <div className="relative">
+            <button
+              onClick={handleCopyPreset}
+              className="size-8 bg-white text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 hover:text-gray-900 active:bg-gray-100 transition-all duration-200 flex items-center justify-center"
+              title="Copy coordinates as Python list"
+              aria-label="Copy coordinates as Python list"
+              tabIndex={0}
+            >
+              <CopyIcon className="w-3.5 h-3.5" />
+            </button>
+            {copied && (
+              <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-gray-800 text-white text-xs rounded shadow z-10 whitespace-nowrap">
+                Copied!
+              </span>
+            )}
+          </div>
+          <button 
+            className="size-8 bg-white text-gray-600 border border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-300 hover:text-red-600 active:bg-red-100 transition-all duration-200 flex items-center justify-center hover:shadow-md"
+            onClick={handleDelete} 
+            title="Delete preset"
+            aria-label={`Delete preset ${preset.name ?? "Unnamed"}`}
+          >
+            <XIcon className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
     </div>
   )
 })
