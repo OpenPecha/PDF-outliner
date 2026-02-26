@@ -1057,9 +1057,10 @@ const PresetItem = memo(function PresetItem({
     }
   }, [preset.id, onSelect])
 
+  const decimalPlaces = 2
   const handleCopyPreset = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    const pythonString = `[${(percentages.x / 100).toFixed(2)}, ${(percentages.y / 100).toFixed(2)}, ${(percentages.width / 100).toFixed(2)}, ${(percentages.height / 100).toFixed(2)}]`
+    const pythonString = `[${(percentages.x / 100).toFixed(decimalPlaces)}, ${(percentages.y / 100).toFixed(decimalPlaces)}, ${(percentages.width / 100).toFixed(decimalPlaces)}, ${(percentages.height / 100).toFixed(decimalPlaces)}]`
     navigator.clipboard.writeText(pythonString)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
