@@ -80,6 +80,14 @@ function PageCropper({
   const [resizeDrag, setResizeDrag] = useState<ResizeDragState | null>(null)
   const [selectedPresetId, setSelectedPresetId] = useState<string | undefined>(appliedPresetId)
   const [cropPreviewUrl, setCropPreviewUrl] = useState<string | null>(null)
+  const [cropBoxInfo, setCropBoxInfo] = useState<{
+    width: number
+    height: number
+    x: number
+    y: number
+    mediaBoxWidth: number
+    mediaBoxHeight: number
+  } | null>(null)
 
   // Render PDF page (progressive/lazy loading)
   useEffect(() => {
@@ -101,12 +109,20 @@ function PageCropper({
         pdfDoc = await (pdfjsLib as any).getDocument({ data: dataUrlToUint8Array(pdfDataUrl),useSystemFonts: true }).promise
       }
 
-      const { canvas, width, height } = await renderPdfPageToCanvas(pdfDoc, pageNumber, 900)
+      const { canvas, width, height, cropBoxWidth, cropBoxHeight, cropBoxX, cropBoxY, mediaBoxWidth, mediaBoxHeight } = await renderPdfPageToCanvas(pdfDoc, pageNumber, 900)
 
       if (cancelled) return
 
       canvasRef.current = canvas
       setImgSize({ w: width, h: height })
+      setCropBoxInfo({
+        width: cropBoxWidth,
+        height: cropBoxHeight,
+        x: cropBoxX,
+        y: cropBoxY,
+        mediaBoxWidth,
+        mediaBoxHeight
+      })
 
       const domCanvas = document.getElementById("pdf-canvas") as HTMLCanvasElement | null
       if (domCanvas) {
@@ -520,6 +536,7 @@ function PageCropper({
           moveDrag={moveDrag}
           resizeDrag={resizeDrag}
           canCreatePreset={canCreatePreset}
+          cropBoxInfo={cropBoxInfo}
           onSelectPreset={setSelectedPresetId}
           onPresetDragStart={handlePresetDragStart}
           onPresetResizeStart={handlePresetResizeStart}
@@ -533,6 +550,7 @@ function PageCropper({
           presets={presets}
           selectedPresetId={selectedPresetId}
           cropPreviewUrl={cropPreviewUrl}
+          cropBoxInfo={cropBoxInfo}
           onSelectPreset={setSelectedPresetId}
           onDeletePreset={onDeletePreset}
         />
@@ -579,6 +597,14 @@ interface CanvasAreaProps {
   moveDrag: MoveDragState | null
   resizeDrag: ResizeDragState | null
   canCreatePreset: boolean
+  cropBoxInfo: {
+    width: number
+    height: number
+    x: number
+    y: number
+    mediaBoxWidth: number
+    mediaBoxHeight: number
+  } | null
   onSelectPreset: (id: string) => void
   onPresetDragStart: (presetId: string, e: React.MouseEvent) => void
   onPresetResizeStart: (presetId: string, handle: ResizeDragState['handle'], e: React.MouseEvent) => void
@@ -601,6 +627,7 @@ const CanvasArea = memo(function CanvasArea({
   moveDrag,
   resizeDrag,
   canCreatePreset,
+  cropBoxInfo,
   onSelectPreset,
   onPresetDragStart,
   onPresetResizeStart,
@@ -654,6 +681,7 @@ const CanvasArea = memo(function CanvasArea({
               isSelected={p.id === selectedPresetId}
               isApplied={p.id === appliedPresetId}
               displaySize={displaySize}
+              cropBoxInfo={cropBoxInfo}
               onSelect={onSelectPreset}
               onDragStart={onPresetDragStart}
               onResizeStart={onPresetResizeStart}
@@ -693,6 +721,14 @@ interface PresetOverlayProps {
   isSelected: boolean
   isApplied: boolean
   displaySize: Size
+  cropBoxInfo: {
+    width: number
+    height: number
+    x: number
+    y: number
+    mediaBoxWidth: number
+    mediaBoxHeight: number
+  } | null
   onSelect: (id: string) => void
   onDragStart: (presetId: string, e: React.MouseEvent) => void
   onResizeStart: (presetId: string, handle: ResizeDragState['handle'], e: React.MouseEvent) => void
@@ -703,10 +739,61 @@ const PresetOverlay = memo(function PresetOverlay({
   isSelected,
   isApplied,
   displaySize,
+  cropBoxInfo,
   onSelect,
   onDragStart,
   onResizeStart,
 }: PresetOverlayProps) {
+  // Helper function to convert preset coordinates to CropBox percentages
+  const getCropBoxPercentages = useCallback((preset: CropPreset) => {
+    if (!cropBoxInfo) {
+      // Fallback to MediaBox percentages if CropBox info not available
+      return {
+        x: preset.x * 100,
+        y: preset.y * 100,
+        width: preset.width * 100,
+        height: preset.height * 100
+      }
+    }
+
+    const { width: cropBoxWidth, height: cropBoxHeight, x: cropBoxX, y: cropBoxY, mediaBoxWidth, mediaBoxHeight } = cropBoxInfo
+
+    // Preset coordinates are ratios (0-1) relative to MediaBox in canvas coordinates (top-left origin)
+    // Convert to MediaBox canvas coordinates
+    const mediaBoxCanvasX = preset.x * mediaBoxWidth
+    const mediaBoxCanvasY = preset.y * mediaBoxHeight
+    const mediaBoxCanvasW = preset.width * mediaBoxWidth
+    const mediaBoxCanvasH = preset.height * mediaBoxHeight
+
+    // Convert canvas coordinates (top-left) to PDF coordinates (bottom-left)
+    // In PDF coordinates, y=0 is at bottom, so: pdfY = mediaBoxHeight - canvasY - height
+    const mediaBoxPdfX = mediaBoxCanvasX
+    const mediaBoxPdfY = mediaBoxHeight - mediaBoxCanvasY - mediaBoxCanvasH
+    const mediaBoxPdfW = mediaBoxCanvasW
+    const mediaBoxPdfH = mediaBoxCanvasH
+
+    // Convert PDF MediaBox coordinates to CropBox coordinates
+    // CropBox coordinates are relative to CropBox origin
+    const cropBoxPdfX = mediaBoxPdfX - cropBoxX
+    const cropBoxPdfY = mediaBoxPdfY - cropBoxY
+    const cropBoxPdfW = mediaBoxPdfW
+    const cropBoxPdfH = mediaBoxPdfH
+
+    // Convert to percentages relative to CropBox
+    const xPercent = (cropBoxPdfX / cropBoxWidth) * 100
+    const yPercent = (cropBoxPdfY / cropBoxHeight) * 100
+    const widthPercent = (cropBoxPdfW / cropBoxWidth) * 100
+    const heightPercent = (cropBoxPdfH / cropBoxHeight) * 100
+
+    return {
+      x: clamp(xPercent, 0, 100),
+      y: clamp(yPercent, 0, 100),
+      width: clamp(widthPercent, 0, 100),
+      height: clamp(heightPercent, 0, 100)
+    }
+  }, [cropBoxInfo])
+
+  const percentages = getCropBoxPercentages(preset)
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
     if (isSelected) {
@@ -747,7 +834,7 @@ const PresetOverlay = memo(function PresetOverlay({
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      title={`${preset.name ?? preset.id} (${(preset.x * 100).toFixed(1)}%, ${(preset.y * 100).toFixed(1)}%, ${(preset.width * 100).toFixed(1)}%, ${(preset.height * 100).toFixed(1)}%)${isSelected ? " - Drag to move, drag corners to resize" : ""}`}
+      title={`${preset.name ?? preset.id} (${percentages.x.toFixed(1)}%, ${percentages.y.toFixed(1)}%, ${percentages.width.toFixed(1)}%, ${percentages.height.toFixed(1)}%)${isSelected ? " - Drag to move, drag corners to resize" : ""}`}
       className={`absolute transition-all duration-200 ${
         isSelected 
           ? "border-2 border-gray-900 bg-gray-900/10 shadow-lg cursor-move" 
@@ -828,6 +915,14 @@ interface PresetSidebarProps {
   presets: CropPreset[]
   selectedPresetId?: string
   cropPreviewUrl: string | null
+  cropBoxInfo: {
+    width: number
+    height: number
+    x: number
+    y: number
+    mediaBoxWidth: number
+    mediaBoxHeight: number
+  } | null
   onSelectPreset: (id: string) => void
   onDeletePreset: (id: string) => void
 }
@@ -836,6 +931,7 @@ const PresetSidebar = memo(function PresetSidebar({
   presets,
   selectedPresetId,
   cropPreviewUrl,
+  cropBoxInfo,
   onSelectPreset,
   onDeletePreset,
 }: PresetSidebarProps) {
@@ -854,6 +950,7 @@ const PresetSidebar = memo(function PresetSidebar({
                 key={p.id}
                 preset={p}
                 isSelected={p.id === selectedPresetId}
+                cropBoxInfo={cropBoxInfo}
                 onSelect={onSelectPreset}
                 onDelete={onDeletePreset}
               />
@@ -879,6 +976,14 @@ const PresetSidebar = memo(function PresetSidebar({
 interface PresetItemProps {
   preset: CropPreset
   isSelected: boolean
+  cropBoxInfo: {
+    width: number
+    height: number
+    x: number
+    y: number
+    mediaBoxWidth: number
+    mediaBoxHeight: number
+  } | null
   onSelect: (id: string) => void
   onDelete: (id: string) => void
 }
@@ -886,12 +991,64 @@ interface PresetItemProps {
 const PresetItem = memo(function PresetItem({
   preset,
   isSelected,
+  cropBoxInfo,
   onSelect,
   onDelete,
 }: PresetItemProps) {
   const [copied, setCopied] = useState(false)
   const handleSelect = useCallback(() => onSelect(preset.id), [preset.id, onSelect])
   const handleDelete = useCallback(() => onDelete(preset.id), [preset.id, onDelete])
+
+  // Helper function to convert preset coordinates to CropBox percentages
+  const getCropBoxPercentages = useCallback((preset: CropPreset) => {
+    if (!cropBoxInfo) {
+      // Fallback to MediaBox percentages if CropBox info not available
+      return {
+        x: preset.x * 100,
+        y: preset.y * 100,
+        width: preset.width * 100,
+        height: preset.height * 100
+      }
+    }
+
+    const { width: cropBoxWidth, height: cropBoxHeight, x: cropBoxX, y: cropBoxY, mediaBoxWidth, mediaBoxHeight } = cropBoxInfo
+
+    // Preset coordinates are ratios (0-1) relative to MediaBox in canvas coordinates (top-left origin)
+    // Convert to MediaBox canvas coordinates
+    const mediaBoxCanvasX = preset.x * mediaBoxWidth
+    const mediaBoxCanvasY = preset.y * mediaBoxHeight
+    const mediaBoxCanvasW = preset.width * mediaBoxWidth
+    const mediaBoxCanvasH = preset.height * mediaBoxHeight
+
+    // Convert canvas coordinates (top-left) to PDF coordinates (bottom-left)
+    // In PDF coordinates, y=0 is at bottom, so: pdfY = mediaBoxHeight - canvasY - height
+    const mediaBoxPdfX = mediaBoxCanvasX
+    const mediaBoxPdfY = mediaBoxHeight - mediaBoxCanvasY - mediaBoxCanvasH
+    const mediaBoxPdfW = mediaBoxCanvasW
+    const mediaBoxPdfH = mediaBoxCanvasH
+
+    // Convert PDF MediaBox coordinates to CropBox coordinates
+    // CropBox coordinates are relative to CropBox origin
+    const cropBoxPdfX = mediaBoxPdfX - cropBoxX
+    const cropBoxPdfY = mediaBoxPdfY - cropBoxY
+    const cropBoxPdfW = mediaBoxPdfW
+    const cropBoxPdfH = mediaBoxPdfH
+
+    // Convert to percentages relative to CropBox
+    const xPercent = (cropBoxPdfX / cropBoxWidth) * 100
+    const yPercent = (cropBoxPdfY / cropBoxHeight) * 100
+    const widthPercent = (cropBoxPdfW / cropBoxWidth) * 100
+    const heightPercent = (cropBoxPdfH / cropBoxHeight) * 100
+
+    return {
+      x: clamp(xPercent, 0, 100),
+      y: clamp(yPercent, 0, 100),
+      width: clamp(widthPercent, 0, 100),
+      height: clamp(heightPercent, 0, 100)
+    }
+  }, [cropBoxInfo])
+
+  const percentages = getCropBoxPercentages(preset)
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -902,11 +1059,11 @@ const PresetItem = memo(function PresetItem({
 
   const handleCopyPreset = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    const pythonString = `[${preset.x.toFixed(2)}, ${preset.y.toFixed(2)}, ${preset.width.toFixed(2)}, ${preset.height.toFixed(2)}]`
+    const pythonString = `[${(percentages.x / 100).toFixed(4)}, ${(percentages.y / 100).toFixed(4)}, ${(percentages.width / 100).toFixed(4)}, ${(percentages.height / 100).toFixed(4)}]`
     navigator.clipboard.writeText(pythonString)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
-  }, [preset])
+  }, [percentages])
 
   return (
     <div className="flex justify-between items-center gap-2">
@@ -925,12 +1082,12 @@ const PresetItem = memo(function PresetItem({
         >
           <span className="flex flex-col gap-0.5 text-xs opacity-80 font-mono">
             <span>
-              <span className="font-semibold text-gray-700">X:</span> {preset.x.toFixed(2)} &nbsp; 
-              <span className="font-semibold text-gray-700">Y:</span> {preset.y.toFixed(2)}
+              <span className="font-semibold text-gray-700">X:</span> {percentages.x.toFixed(1)}% &nbsp; 
+              <span className="font-semibold text-gray-700">Y:</span> {percentages.y.toFixed(1)}%
             </span>
             <span>
-              <span className="font-semibold text-gray-700">W:</span> {preset.width.toFixed(2)} &nbsp; 
-              <span className="font-semibold text-gray-700">H:</span> {preset.height.toFixed(2)}
+              <span className="font-semibold text-gray-700">W:</span> {percentages.width.toFixed(1)}% &nbsp; 
+              <span className="font-semibold text-gray-700">H:</span> {percentages.height.toFixed(1)}%
             </span>
           </span>
         </button>
@@ -939,8 +1096,8 @@ const PresetItem = memo(function PresetItem({
             <button
               onClick={handleCopyPreset}
               className="size-8 bg-white text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 hover:text-gray-900 active:bg-gray-100 transition-all duration-200 flex items-center justify-center"
-              title="Copy coordinates as Python list"
-              aria-label="Copy coordinates as Python list"
+              title="Copy CropBox coordinates as Python list"
+              aria-label="Copy CropBox coordinates as Python list"
               tabIndex={0}
             >
               <CopyIcon className="w-3.5 h-3.5" />

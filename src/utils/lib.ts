@@ -53,10 +53,17 @@ interface RenderResult {
   canvas: HTMLCanvasElement
   width: number
   height: number
+  cropBoxWidth: number
+  cropBoxHeight: number
+  cropBoxX: number
+  cropBoxY: number
+  mediaBoxWidth: number
+  mediaBoxHeight: number
 }
 
 /**
  * Render a single PDF page to a canvas at a fixed width
+ * Returns both MediaBox dimensions (for rendering) and CropBox dimensions (for percentage calculations)
  */
 export async function renderPdfPageToCanvas(
   pdf: any,
@@ -67,6 +74,53 @@ export async function renderPdfPageToCanvas(
   const viewport1 = page.getViewport({ scale: 1 })
   const scale = targetWidth / viewport1.width
   const viewport = page.getViewport({ scale })
+
+  // Get MediaBox dimensions (default viewport dimensions)
+  const mediaBoxWidth = viewport1.width
+  const mediaBoxHeight = viewport1.height
+
+  // Get CropBox dimensions from page dictionary
+  // pdf.js stores page info in _pageInfo, and CropBox can be accessed via the page dictionary
+  // If CropBox is not set, it defaults to MediaBox
+  let cropBoxWidth = mediaBoxWidth
+  let cropBoxHeight = mediaBoxHeight
+  let cropBoxX = 0
+  let cropBoxY = 0
+  
+  try {
+    // Access the page dictionary to get CropBox
+    // In pdf.js, the page dictionary is accessible through _pageInfo.dict
+    const pageDict = (page as any)._pageInfo?.dict
+    if (pageDict) {
+      // Try to get CropBox - it might be a direct value or a promise
+      let cropBox = pageDict.get('CropBox')
+      
+      // If it's a promise, await it
+      if (cropBox && typeof cropBox.then === 'function') {
+        cropBox = await cropBox
+      }
+      
+      // If cropBox is still a reference, try to resolve it
+      if (cropBox && cropBox._isRef) {
+        cropBox = await pageDict.context.lookup(cropBox)
+      }
+      
+      if (cropBox && Array.isArray(cropBox) && cropBox.length === 4) {
+        // CropBox is [llx, lly, urx, ury] in PDF coordinates
+        const [llx, lly, urx, ury] = cropBox.map((v: any) => {
+          // Values might be PDFNumber objects, extract the value
+          return typeof v === 'object' && v !== null && 'value' in v ? v.value : v
+        })
+        cropBoxX = llx
+        cropBoxY = lly
+        cropBoxWidth = urx - llx
+        cropBoxHeight = ury - lly
+      }
+    }
+  } catch (error) {
+    // If we can't access CropBox, fall back to MediaBox dimensions
+    console.warn('Could not access CropBox, using MediaBox dimensions:', error)
+  }
 
   const canvas = document.createElement("canvas")
   const ctx = canvas.getContext("2d", {
@@ -85,7 +139,17 @@ export async function renderPdfPageToCanvas(
 
   await page.render({ canvasContext: ctx, viewport }).promise
 
-  return { canvas, width: canvas.width, height: canvas.height }
+  return { 
+    canvas, 
+    width: canvas.width, 
+    height: canvas.height,
+    cropBoxWidth,
+    cropBoxHeight,
+    cropBoxX,
+    cropBoxY,
+    mediaBoxWidth,
+    mediaBoxHeight
+  }
 }
 
 interface CropRect {

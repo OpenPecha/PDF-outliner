@@ -299,13 +299,6 @@ export default function PdfCropperPage() {
                       </>
                     )}
                   </button>
-                  {/* <button 
-                    className="w-full flex items-center  gap-2 px-4 py-2.5 bg-white text-gray-800 text-base font-semibold rounded-lg shadow-md border border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-opacity-75 transition duration-200" 
-                    onClick={handleReset}
-                    aria-label="Reset workspace"
-                  >
-                    <><ListRestart/> Back to Home</>
-                  </button> */}
                   <Uploader disabled={isLoadingPdf} onUpload={handleUploadPdf} label="Upload New PDF" />
                 </div>
               </div>
