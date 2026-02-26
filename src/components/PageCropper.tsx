@@ -1059,7 +1059,7 @@ const PresetItem = memo(function PresetItem({
 
   const handleCopyPreset = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    const pythonString = `[${(percentages.x / 100).toFixed(4)}, ${(percentages.y / 100).toFixed(4)}, ${(percentages.width / 100).toFixed(4)}, ${(percentages.height / 100).toFixed(4)}]`
+    const pythonString = `[${(percentages.x / 100).toFixed(2)}, ${(percentages.y / 100).toFixed(2)}, ${(percentages.width / 100).toFixed(2)}, ${(percentages.height / 100).toFixed(2)}]`
     navigator.clipboard.writeText(pythonString)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
